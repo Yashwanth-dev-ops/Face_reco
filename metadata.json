@@ -1,0 +1,7 @@
+{
+  "name": "Facial Emotion Recognition AI",
+  "description": "A real-time facial emotion recognition system using deep learning. It uses your camera to detect and interpret human emotions through the Gemini API.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
