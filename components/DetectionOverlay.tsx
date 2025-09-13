@@ -31,18 +31,20 @@ const BoundingBox: React.FC<{
     };
     
     const isRegistered = !!face.studentInfo;
+    const isBlocked = face.studentInfo?.isBlocked === true;
+    const borderColor = isBlocked ? 'border-red-500' : colors.border;
 
     return (
-        <div style={style} className={`border-2 ${colors.border} rounded-md shadow-lg animate-fade-in flex flex-col justify-end`}>
+        <div style={style} className={`border-2 ${borderColor} rounded-md shadow-lg animate-fade-in flex flex-col justify-end`}>
             <div className={`absolute -top-7 left-0 text-sm font-bold text-white px-2 py-1 rounded-md ${colors.labelBg} bg-opacity-90 backdrop-blur-sm whitespace-nowrap`}>
-                {emoji} {label}
+                {emoji} {label} {isBlocked && '(Blocked)'}
             </div>
             {!isRegistered && face.persistentId && (
                 <button
                     onClick={() => onRegister(face)}
                     className="absolute top-1 right-1 bg-indigo-600 text-white text-xs font-bold px-2 py-1 rounded-md hover:bg-indigo-500 transition-colors shadow-lg"
                 >
-                    Register
+                    Link Student
                 </button>
             )}
         </div>

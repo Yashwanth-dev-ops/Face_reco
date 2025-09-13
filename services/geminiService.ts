@@ -1,5 +1,6 @@
+
 import { GoogleGenAI, Type } from '@google/genai';
-import { Emotion, HandSign, DetectionResult } from '../types';
+import { Emotion, HandSign, DetectionResult, HeadPose } from '../types';
 
 if (!process.env.API_KEY) {
     throw new Error("API_KEY environment variable is not set for Gemini");
@@ -11,8 +12,9 @@ const model = 'gemini-2.5-flash';
 const prompt = `
 Analyze the provided image to identify all human faces and a variety of nuanced hand gestures.
 Your response must strictly adhere to the defined JSON schema.
-- Identify each person with a short, descriptive identifier (e.g., 'Person with glasses'). Be consistent for the same person if possible.
+- For each person, provide a simple, unique identifier like 'Person 1', 'Person 2'. Maintain consistency for the same person if they appear multiple times in the same image.
 - Detect the dominant emotion for each face.
+- Determine the head pose for each face (e.g., looking straight, left, right, up).
 - Classify any visible hand signs.
 - Provide a confidence score and a normalized bounding box for each detection.
 If no faces or hands are detected, return empty arrays for "faces" and "hands" respectively.
@@ -28,6 +30,7 @@ const schema = {
                 properties: {
                     personId: { type: Type.STRING, description: "A short, descriptive identifier for the person." },
                     emotion: { type: Type.STRING, enum: Object.values(Emotion), description: "The detected dominant emotion." },
+                    headPose: { type: Type.STRING, enum: Object.values(HeadPose), description: "The detected head pose." },
                     confidence: { type: Type.NUMBER, description: "Confidence score from 0.0 to 1.0." },
                     boundingBox: {
                         type: Type.OBJECT,
@@ -40,7 +43,7 @@ const schema = {
                         required: ["x", "y", "width", "height"]
                     },
                 },
-                required: ["personId", "emotion", "confidence", "boundingBox"]
+                required: ["personId", "emotion", "headPose", "confidence", "boundingBox"]
             }
         },
         hands: {
@@ -103,13 +106,112 @@ export async function detectFacesAndHands(base64ImageData: string): Promise<Dete
     } catch (error) {
         console.error("Error in detectFacesAndHands:", error);
         
-        // Check for specific Gemini rate limit error text
-        if (error instanceof Error && (error.message.includes('RESOURCE_EXHAUSTED') || error.message.includes('429'))) {
-             console.error("Gemini API Error: Rate limit exceeded");
-             throw new Error("RATE_LIMIT");
+        if (error instanceof Error) {
+            // Check for specific Gemini rate limit error text
+            if (error.message.includes('RESOURCE_EXHAUSTED') || error.message.includes('429')) {
+                 console.error("Gemini API Error: Rate limit exceeded");
+                 throw new Error("RATE_LIMIT");
+            }
+            // Check for network errors, which often manifest as a TypeError
+            if (error instanceof TypeError && error.message.toLowerCase().includes('failed to fetch')) {
+                console.error("Gemini API Error: Network error");
+                throw new Error("NETWORK_ERROR");
+            }
         }
 
         // Generalize other errors
         throw new Error("Failed to get detection result from the API.");
+    }
+}
+
+export async function recognizeFace(
+    imageBase64: string,
+    userProfiles: { id: string; photoBase64: string }[]
+): Promise<{ matchedUserId: string; confidence: number }> {
+    const recognizePrompt = `
+    You are a highly accurate facial recognition system. Your task is to verify a user's identity based on a live capture and match them against a user database.
+
+    This request contains:
+    1.  A single "Live Capture" image of the user trying to log in.
+    2.  A "User Database" of registered user photos.
+
+    Your verification process must follow these steps:
+    1.  **Facial Recognition**: Compare the face from the "Live Capture" against all photos in the "User Database".
+    2.  **Final Decision**:
+        - If you find a confident match in the database, return the corresponding 'matchedUserId'.
+        - If you cannot find a confident match, you MUST return 'UNKNOWN' as the 'matchedUserId'.
+
+    Your response must strictly follow the provided JSON schema.
+    `;
+    
+    const recognizeSchema = {
+        type: Type.OBJECT,
+        properties: {
+            matchedUserId: { type: Type.STRING, description: "The user ID of the best match, or 'UNKNOWN'." },
+            confidence: { type: Type.NUMBER, description: "Confidence score of the match from 0.0 to 1.0." }
+        },
+        required: ["matchedUserId", "confidence"]
+    };
+
+    try {
+        const parts: any[] = [
+            { text: recognizePrompt },
+            { text: "--- LIVE CAPTURE ---" },
+            {
+                inlineData: {
+                    mimeType: 'image/jpeg',
+                    data: imageBase64,
+                },
+            },
+            { text: "\n--- USER DATABASE ---" },
+        ];
+        
+        userProfiles.forEach(profile => {
+             const base64Data = profile.photoBase64.split(',')[1];
+            parts.push({ text: `\nUser ID: ${profile.id}` });
+            parts.push({
+                inlineData: {
+                    mimeType: 'image/jpeg',
+                    data: base64Data,
+                },
+            });
+        });
+
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: { parts: parts },
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: recognizeSchema,
+            }
+        });
+
+        const jsonString = response.text.trim();
+        const parsedResult = JSON.parse(jsonString);
+
+        if (!parsedResult || typeof parsedResult.matchedUserId !== 'string' || typeof parsedResult.confidence !== 'number') {
+            throw new Error("Invalid response structure from face recognition API");
+        }
+        
+        return parsedResult;
+
+    } catch (error) {
+        console.error("Error in recognizeFace:", error);
+        
+        if (error instanceof Error) {
+            // Check for specific Gemini rate limit error text
+            if (error.message.includes('RESOURCE_EXHAUSTED') || error.message.includes('429')) {
+                 console.error("Gemini API Error: Rate limit exceeded during face recognition");
+                 throw new Error("You are trying too frequently. Please wait a moment before trying again.");
+            }
+            // Check for network errors, which often manifest as a TypeError
+            if (error instanceof TypeError && error.message.toLowerCase().includes('failed to fetch')) {
+                console.error("Gemini API Error: Network error during face recognition");
+                throw new Error("Network error. Please check your connection and try again.");
+            }
+        }
+
+        // Generalize other errors
+        throw new Error("Facial recognition service failed.");
     }
 }

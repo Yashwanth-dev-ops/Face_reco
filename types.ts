@@ -1,4 +1,5 @@
 
+
 export enum Emotion {
     Happy = 'Happy',
     Sad = 'Sad',
@@ -23,6 +24,30 @@ export enum HandSign {
     Love = 'Love',
 }
 
+export enum Year {
+    First = '1st Year',
+    Second = '2nd Year',
+    Third = '3rd Year',
+    Fourth = '4th Year',
+}
+
+export enum Designation {
+    Principal = 'Principal',
+    VicePrincipal = 'Vice Principal',
+    HOD = 'HOD',
+    Incharge = 'Incharge',
+    Teacher = 'Teacher',
+}
+
+export enum HeadPose {
+    LookingStraight = 'Looking Straight',
+    LookingLeft = 'Looking Left',
+    LookingRight = 'Looking Right',
+    LookingUp = 'Looking Up',
+    LookingDown = 'Looking Down',
+}
+
+
 export interface BoundingBox {
     x: number;
     y: number;
@@ -32,7 +57,23 @@ export interface BoundingBox {
 
 export interface StudentInfo {
     name: string;
-    rollNumber: string;
+    rollNumber: string; // Will be used as username
+    department: string;
+    year: Year;
+    password: string; // In a real app, this would be a hash
+    isBlocked: boolean;
+    photoBase64?: string;
+}
+
+export interface AdminInfo {
+    name: string;
+    idNumber: string; // Will be used as username
+    phoneNumber: string;
+    department: string;
+    designation: Designation;
+    password: string; // In a real app, this would be a hash
+    isBlocked?: boolean;
+    photoBase64?: string;
 }
 
 export interface AttendanceRecord {
@@ -47,6 +88,7 @@ export interface FaceResult {
     emotion: Emotion;
     confidence: number;
     boundingBox: BoundingBox;
+    headPose?: HeadPose;
     persistentId?: number;
     studentInfo?: StudentInfo;
 }

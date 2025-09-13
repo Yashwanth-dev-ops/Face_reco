@@ -1,25 +1,31 @@
-
 import { AttendanceRecord, StudentInfo } from '../types';
 
-export function exportAttendanceToCSV(attendance: AttendanceRecord[], students: Map<number, StudentInfo>): void {
-    const headers = ['Roll Number', 'Name', 'Date', 'Time', 'Emotion'];
+export function exportAttendanceToCSV(
+    attendance: AttendanceRecord[], 
+    faceLinks: Map<number, string>,
+    studentDirectory: Map<string, StudentInfo>
+): void {
+    const headers = ['Roll Number', 'Name', 'Department / Year', 'Date', 'Emotion', 'Status'];
 
     const rows = attendance.map(record => {
-        const student = students.get(record.persistentId);
+        const rollNumber = faceLinks.get(record.persistentId);
+        if (!rollNumber) return null;
+
+        const student = studentDirectory.get(rollNumber);
         if (!student) {
-            return null; // Skip if student not found (e.g., unregistered)
+            return null; // Skip if student not found (e.g., deleted)
         }
 
         const date = new Date(record.timestamp);
         const dateString = date.toLocaleDateString();
-        const timeString = date.toLocaleTimeString();
 
         return [
             `"${student.rollNumber}"`,
             `"${student.name}"`,
+            `"${student.department} / ${student.year}"`,
             `"${dateString}"`,
-            `"${timeString}"`,
-            `"${record.emotion}"`
+            `"${record.emotion}"`,
+            `"Present"`
         ].join(',');
     }).filter(row => row !== null);
 

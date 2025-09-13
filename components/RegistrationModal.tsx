@@ -1,23 +1,41 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FaceResult, StudentInfo } from '../types';
 
 interface RegistrationModalProps {
     face: FaceResult;
+    unlinkedStudents: StudentInfo[];
     onClose: () => void;
-    onSave: (persistentId: number, info: StudentInfo) => void;
+    onLink: (persistentId: number, rollNumber: string) => void;
 }
 
-export const RegistrationModal: React.FC<RegistrationModalProps> = ({ face, onClose, onSave }) => {
-    const [name, setName] = useState('');
-    const [rollNumber, setRollNumber] = useState('');
+export const RegistrationModal: React.FC<RegistrationModalProps> = ({ face, unlinkedStudents, onClose, onLink }) => {
+    const [selectedRollNumber, setSelectedRollNumber] = useState(unlinkedStudents[0]?.rollNumber || '');
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+        // When the list of unlinked students changes, ensure the selection is valid.
+        const isSelectedStudentValid = unlinkedStudents.some(s => s.rollNumber === selectedRollNumber);
+        
+        // If the selected student is no longer in the list, or no student is selected,
+        // reset the selection to the first available student to prevent stale state.
+        if (!isSelectedStudentValid) {
+            setSelectedRollNumber(unlinkedStudents[0]?.rollNumber || '');
+        }
+    }, [unlinkedStudents]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (name.trim() && rollNumber.trim() && face.persistentId) {
-            onSave(face.persistentId, { name, rollNumber });
+        if (!selectedRollNumber) {
+            setError('Please select a student to link.');
+            return;
+        }
+        if (face.persistentId) {
+            onLink(face.persistentId, selectedRollNumber);
         }
     };
+    
+    if (!face.persistentId) return null;
 
     return (
         <div 
@@ -29,42 +47,36 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({ face, onCl
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="text-center">
-                    <h2 className="text-2xl font-bold text-white">Register Student</h2>
+                    <h2 className="text-2xl font-bold text-white">Link Student to Face</h2>
                     <p className="text-gray-400 mt-1">
-                        Enter details for: <span className="font-semibold text-indigo-300">{face.personId}</span>
+                        Select a registered student to link with: <span className="font-semibold text-indigo-300">Person {face.persistentId}</span>
                     </p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-                    <div>
-                        <label htmlFor="name" className="block text-sm font-medium text-gray-300 mb-1">
-                            Student Name
+                     <div>
+                        <label htmlFor="student" className="block text-sm font-medium text-gray-300 mb-1">
+                            Unlinked Students
                         </label>
-                        <input
-                            type="text"
-                            id="name"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
+                        <select
+                            id="student"
+                            value={selectedRollNumber}
+                            onChange={(e) => setSelectedRollNumber(e.target.value)}
                             className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
-                            placeholder="e.g., John Doe"
                             required
-                            autoFocus
-                        />
+                        >
+                            <option value="" disabled>-- Select a student --</option>
+                            {unlinkedStudents.map(student => (
+                                <option key={student.rollNumber} value={student.rollNumber}>
+                                    {student.name} ({student.rollNumber})
+                                </option>
+                            ))}
+                        </select>
+                        {unlinkedStudents.length === 0 && <p className="text-xs text-yellow-400 mt-1">No unlinked students available for registration.</p>}
                     </div>
-                    <div>
-                        <label htmlFor="rollNumber" className="block text-sm font-medium text-gray-300 mb-1">
-                            College Roll Number
-                        </label>
-                        <input
-                            type="text"
-                            id="rollNumber"
-                            value={rollNumber}
-                            onChange={(e) => setRollNumber(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
-                            placeholder="e.g., 21A91A0501"
-                            required
-                        />
-                    </div>
+
+                    {error && <p className="text-sm text-red-400 text-center">{error}</p>}
+
                     <div className="flex items-center justify-end gap-4 pt-4">
                         <button
                             type="button"
@@ -76,9 +88,9 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({ face, onCl
                         <button
                             type="submit"
                             className="px-6 py-2 rounded-md font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-500 disabled:cursor-not-allowed"
-                            disabled={!name.trim() || !rollNumber.trim()}
+                            disabled={!selectedRollNumber}
                         >
-                            Save
+                            Link Student
                         </button>
                     </div>
                 </form>
