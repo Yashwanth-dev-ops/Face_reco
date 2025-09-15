@@ -129,19 +129,10 @@ export async function recognizeFace(
     userProfiles: { id: string; photoBase64: string }[]
 ): Promise<{ matchedUserId: string; confidence: number }> {
     const recognizePrompt = `
-    You are a highly accurate facial recognition system. Your task is to verify a user's identity based on a live capture and match them against a user database.
-
-    This request contains:
-    1.  A single "Live Capture" image of the user trying to log in.
-    2.  A "User Database" of registered user photos.
-
-    Your verification process must follow these steps:
-    1.  **Facial Recognition**: Compare the face from the "Live Capture" against all photos in the "User Database".
-    2.  **Final Decision**:
-        - If you find a confident match in the database, return the corresponding 'matchedUserId'.
-        - If you cannot find a confident match, you MUST return 'UNKNOWN' as the 'matchedUserId'.
-
-    Your response must strictly follow the provided JSON schema.
+    Analyze the 'Live Capture' image and find the best match from the 'User Database'.
+    Return the 'matchedUserId' of the best match.
+    If no confident match is found, you MUST return 'UNKNOWN' as the 'matchedUserId'.
+    Strictly follow the provided JSON schema.
     `;
     
     const recognizeSchema = {
@@ -213,5 +204,69 @@ export async function recognizeFace(
 
         // Generalize other errors
         throw new Error("Facial recognition service failed.");
+    }
+}
+
+export async function detectSingleFaceEmotion(base64ImageData: string): Promise<{ emotion: Emotion } | null> {
+    const emotionPrompt = `Analyze the image and identify the dominant emotion of the main face present. Your response must strictly follow the JSON schema. If no face is detected, return null.`;
+    
+    const emotionSchema = {
+        type: Type.OBJECT,
+        properties: {
+            emotion: { type: Type.STRING, enum: Object.values(Emotion), description: "The detected dominant emotion." },
+        },
+        required: ["emotion"]
+    };
+
+    try {
+        const imagePart = {
+            inlineData: {
+                mimeType: 'image/jpeg',
+                data: base64ImageData,
+            },
+        };
+
+        const textPart = {
+            text: emotionPrompt,
+        };
+
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: { parts: [imagePart, textPart] },
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: emotionSchema,
+            }
+        });
+
+        const jsonString = response.text.trim();
+        // Handle cases where the API might return an empty string or "null" for no detection
+        if (!jsonString || jsonString.toLowerCase() === 'null') {
+            return null;
+        }
+        
+        const parsedResult = JSON.parse(jsonString);
+
+        if (!parsedResult || typeof parsedResult.emotion !== 'string') {
+             return null;
+        }
+        
+        return parsedResult;
+
+    } catch (error) {
+        console.error("Error in detectSingleFaceEmotion:", error);
+        
+        if (error instanceof Error) {
+            if (error.message.includes('RESOURCE_EXHAUSTED') || error.message.includes('429')) {
+                 console.error("Gemini API Error: Rate limit exceeded");
+                 throw new Error("RATE_LIMIT");
+            }
+            if (error instanceof TypeError && error.message.toLowerCase().includes('failed to fetch')) {
+                console.error("Gemini API Error: Network error");
+                throw new Error("NETWORK_ERROR");
+            }
+        }
+        // Generalize other errors
+        throw new Error("Failed to get emotion detection result from the API.");
     }
 }

@@ -1,12 +1,10 @@
-
-
-
-
-import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { StudentInfo, AttendanceRecord, Emotion, DetectionResult } from '../types';
+import React, { useState, useMemo } from 'react';
+import { StudentInfo, AttendanceRecord, Emotion, MidTermMarks } from '../types';
 import { emotionUIConfig } from './uiConfig';
-import { detectFacesAndHands } from '../services/geminiService';
-import { CameraIcon } from './CameraIcon';
+import { detectSingleFaceEmotion } from '../services/geminiService';
+import { AttendanceStatusPanel } from './AttendanceStatusPanel';
+import { AttendanceCaptureModal } from './AttendanceCaptureModal';
+import { AttendanceCalendar } from './AttendanceCalendar';
 
 interface StudentDashboardProps {
     currentUser: StudentInfo;
@@ -17,103 +15,106 @@ interface StudentDashboardProps {
     onLinkFace: () => Promise<void>;
 }
 
-const StatusCard: React.FC<{ 
-    isBlocked: boolean;
-    isFaceLinked: boolean;
-    cameraActive: boolean;
-    lastLogTimestamp: number | null;
-}> = ({ isBlocked, isFaceLinked, cameraActive, lastLogTimestamp }) => {
+const EmptyLogIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+    </svg>
+);
+
+const getWorkingDaysInMonth = (year: number, month: number): number => {
+    const today = new Date();
+    const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
+    const lastDay = isCurrentMonth ? today.getDate() : new Date(year, month + 1, 0).getDate();
     
-    let icon: React.ReactNode;
-    let title: string;
-    let message: string;
-    let bgColor: string;
-    let borderColor: string;
-    let titleColor: string;
-    
-    if (isBlocked) {
-        icon = (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-            </svg>
-        );
-        title = 'ACCOUNT BLOCKED';
-        message = "Your account has been blocked. You cannot be marked present.";
-        bgColor = 'bg-red-900/40';
-        borderColor = 'border-red-700/50';
-        titleColor = 'text-red-400';
-    } else if (!isFaceLinked) {
-        icon = (
-             <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-        );
-        title = 'FACE NOT LINKED';
-        message = "Link your face to enable attendance marking. Start the camera and click 'Link My Face' below.";
-        bgColor = 'bg-yellow-900/40';
-        borderColor = 'border-yellow-700/50';
-        titleColor = 'text-yellow-400';
-    } else if (lastLogTimestamp) {
-         icon = (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-        );
-        title = 'ATTENDANCE MARKED';
-        message = `Last marked at ${new Date(lastLogTimestamp).toLocaleTimeString()}. You can mark again if needed.`;
-        bgColor = 'bg-green-900/40';
-        borderColor = 'border-green-700/50';
-        titleColor = 'text-green-400';
-    } else if (cameraActive) {
-         icon = (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-        );
-        title = 'READY TO MARK';
-        message = "Camera is active. Click 'Mark My Attendance' to log your presence.";
-        bgColor = 'bg-blue-900/40';
-        borderColor = 'border-blue-700/50';
-        titleColor = 'text-blue-400';
-    } else { // Camera Inactive / Idle
-         icon = (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.55a2 2 0 01.45 2.12A12.01 12.01 0 0112 21a12.035 12.035 0 01-8-3.32 2 2 0 01.45-2.12L9 10m0 0h6m-6 0a3 3 0 01-3-3V6a3 3 0 013-3h6a3 3 0 013 3v1a3 3 0 01-3 3" />
-            </svg>
-        );
-        title = 'CAMERA INACTIVE';
-        message = "Start your camera and use the button below to mark your attendance or link your face.";
-        bgColor = 'bg-slate-700/40';
-        borderColor = 'border-slate-600/50';
-        titleColor = 'text-gray-400';
+    let workingDays = 0;
+    for (let day = 1; day <= lastDay; day++) {
+        const date = new Date(year, month, day);
+        const dayOfWeek = date.getDay();
+        if (dayOfWeek > 0 && dayOfWeek < 6) { // Monday to Friday
+            workingDays++;
+        }
+    }
+    return workingDays;
+};
+
+interface MonthlyStat {
+    key: string;
+    monthName: string;
+    presentDays: number;
+    workingDays: number;
+    percentage: number;
+}
+
+const MonthlyAttendanceSummary: React.FC<{ monthlyStats: MonthlyStat[] }> = ({ monthlyStats }) => {
+    if (monthlyStats.length === 0) {
+        return null;
     }
 
     return (
-        <div className={`p-4 rounded-lg ${bgColor} border ${borderColor} transition-all duration-300`}>
-            <h3 className="text-lg font-bold text-gray-200 mb-2">Live Attendance Status</h3>
-            <div className="flex items-center gap-4">
-                {icon}
-                <div>
-                    <p className={`text-xl font-black ${titleColor}`}>
-                        {title}
-                    </p>
-                    <p className="text-sm text-gray-400 mt-1">{message}</p>
-                </div>
+        <div className="mt-6">
+            <h3 className="text-xl font-bold text-gray-200 mb-4">Monthly Attendance Summary</h3>
+            <div className="bg-slate-900/50 rounded-lg max-h-60 overflow-y-auto">
+                <table className="w-full text-left">
+                    <thead className="sticky top-0 bg-slate-900/80 backdrop-blur-sm z-10">
+                        <tr>
+                            <th className="p-3 text-xs font-semibold uppercase text-gray-500 tracking-wider">Month</th>
+                            <th className="p-3 text-xs font-semibold uppercase text-gray-500 tracking-wider text-center">Present</th>
+                            <th className="p-3 text-xs font-semibold uppercase text-gray-500 tracking-wider text-center">Working Days</th>
+                            <th className="p-3 text-xs font-semibold uppercase text-gray-500 tracking-wider text-center">%</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                        {monthlyStats.map(stat => (
+                            <tr key={stat.key} className="hover:bg-slate-800/60 transition-colors">
+                                <td className="p-3 text-sm text-gray-300 font-semibold">{stat.monthName}</td>
+                                <td className="p-3 text-sm text-gray-300 text-center font-mono">{stat.presentDays}</td>
+                                <td className="p-3 text-sm text-gray-300 text-center font-mono">{stat.workingDays}</td>
+                                <td className="p-3 text-sm text-white font-bold text-center font-mono">{stat.percentage}%</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
             </div>
         </div>
     );
 };
 
+const StudentMarksPanel: React.FC<{ marks: MidTermMarks[] }> = ({ marks }) => {
+    return (
+        <div className="mt-6">
+            <h3 className="text-xl font-bold text-gray-200 mb-4">Mid-Term Marks</h3>
+            <div className="bg-slate-900/50 rounded-lg max-h-60 overflow-y-auto">
+                {(!marks || marks.length === 0) ? (
+                    <p className="text-center text-gray-500 p-8">No mid-term marks have been entered yet.</p>
+                ) : (
+                    <table className="w-full text-left">
+                        <thead className="sticky top-0 bg-slate-900/80 backdrop-blur-sm z-10">
+                            <tr>
+                                <th className="p-3 text-xs font-semibold uppercase text-gray-500 tracking-wider">Subject</th>
+                                <th className="p-3 text-xs font-semibold uppercase text-gray-500 tracking-wider text-center">Mid-I Marks</th>
+                                <th className="p-3 text-xs font-semibold uppercase text-gray-500 tracking-wider text-center">Mid-II Marks</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800">
+                            {marks.map(mark => (
+                                <tr key={mark.subject} className="hover:bg-slate-800/60 transition-colors">
+                                    <td className="p-3 text-sm text-gray-300 font-semibold">{mark.subject}</td>
+                                    <td className="p-3 text-sm text-white text-center font-mono">{mark.mid1 ?? 'N/A'}</td>
+                                    <td className="p-3 text-sm text-white text-center font-mono">{mark.mid2 ?? 'N/A'}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
+            </div>
+        </div>
+    );
+};
+
+
 export const StudentDashboard: React.FC<StudentDashboardProps> = ({ currentUser, attendance, faceLinks, onLogout, onLogAttendance, onLinkFace }) => {
-    const [stream, setStream] = useState<MediaStream | null>(null);
-    const [error, setError] = useState<{title: string, message: string} | null>(null);
-    const [isMarking, setIsMarking] = useState(false);
-    const [isLinking, setIsLinking] = useState(false);
-    
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const isProcessing = useRef(false);
+    const [isCaptureModalOpen, setIsCaptureModalOpen] = useState(false);
+    const [captureMode, setCaptureMode] = useState<'MARK' | 'LINK'>('MARK');
 
     const studentPersistentId = useMemo(() => {
         for (const [pid, roll] of faceLinks.entries()) {
@@ -131,115 +132,124 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ currentUser,
             .sort((a, b) => b.timestamp - a.timestamp);
     }, [attendance, studentPersistentId]);
     
-    const lastLogTimestamp = studentAttendance[0]?.timestamp || null;
+    const todaysAttendance = useMemo(() => {
+        const today = new Date().toDateString();
+        return studentAttendance.find(rec => new Date(rec.timestamp).toDateString() === today);
+    }, [studentAttendance]);
 
-    const handleStartCamera = async () => {
-        setError(null);
-        try {
-            const mediaStream = await navigator.mediaDevices.getUserMedia({
-                video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-                audio: false
-            });
-            setStream(mediaStream);
-            if (videoRef.current) videoRef.current.srcObject = mediaStream;
-        } catch (err) {
-            console.error("Error accessing camera:", err);
-            setError({ title: "Camera Error", message: "Could not access the camera. Please check permissions." });
-        }
-    };
+    const attendanceStatus = useMemo(() => {
+        if (currentUser.isBlocked) return 'BLOCKED';
+        if (!isFaceLinked) return 'UNLINKED';
+        if (todaysAttendance) return 'PRESENT';
+        return 'ABSENT';
+    }, [currentUser.isBlocked, isFaceLinked, todaysAttendance]);
 
-    const handleStopCamera = () => {
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-            setStream(null);
-        }
-    };
+    const monthlyStats = useMemo<MonthlyStat[]>(() => {
+        const stats: { [key: string]: { present: Set<string>, year: number, month: number } } = {};
+        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-    const handleMarkAttendance = async () => {
-        if (isProcessing.current || !videoRef.current || !canvasRef.current || !stream || currentUser.isBlocked || !isFaceLinked) return;
-    
-        setIsMarking(true);
-        isProcessing.current = true;
-        setError(null);
+        studentAttendance.forEach(record => {
+            const date = new Date(record.timestamp);
+            const year = date.getFullYear();
+            const month = date.getMonth();
+            const key = `${year}-${month}`;
+
+            if (!stats[key]) {
+                stats[key] = { present: new Set(), year, month };
+            }
+            stats[key].present.add(date.toDateString());
+        });
+
+        return Object.values(stats)
+            .map(stat => {
+                const workingDays = getWorkingDaysInMonth(stat.year, stat.month);
+                const presentDays = stat.present.size;
+                const percentage = workingDays > 0 ? Math.round((presentDays / workingDays) * 100) : 0;
+                return {
+                    key: `${stat.year}-${stat.month}`,
+                    monthName: `${monthNames[stat.month]} ${stat.year}`,
+                    presentDays,
+                    workingDays,
+                    percentage,
+                };
+            })
+            .sort((a, b) => b.key.localeCompare(a.key)); // Sort descending by date
+    }, [studentAttendance]);
+
+    const attendanceStats = useMemo(() => {
+        const now = new Date();
+        const currentMonthKey = `${now.getFullYear()}-${now.getMonth()}`;
         
-        const video = videoRef.current;
-        const canvas = canvasRef.current;
-        const context = canvas.getContext('2d');
-        if (!context) {
-            setIsMarking(false);
-            isProcessing.current = false;
-            return;
+        const currentMonthData = monthlyStats.find(stat => stat.key === currentMonthKey);
+
+        if (currentMonthData) {
+            return {
+                daysPresent: currentMonthData.presentDays,
+                totalDays: currentMonthData.workingDays,
+                percentage: currentMonthData.percentage
+            };
+        }
+
+        return {
+            daysPresent: 0,
+            totalDays: getWorkingDaysInMonth(now.getFullYear(), now.getMonth()),
+            percentage: 0
+        };
+    }, [monthlyStats]);
+
+
+    const handleMarkAttendance = async (base64Data: string) => {
+        if (currentUser.isBlocked || !isFaceLinked || studentPersistentId === null) {
+            throw new Error("Cannot mark attendance at this time.");
         }
     
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-        
         try {
-            const result = await detectFacesAndHands(base64Data);
-            if (result.faces.length > 0 && studentPersistentId !== null) {
-                const face = result.faces[0];
-                onLogAttendance(studentPersistentId, face.emotion);
+            const result = await detectSingleFaceEmotion(base64Data);
+            if (result && result.emotion) {
+                onLogAttendance(studentPersistentId, result.emotion);
             } else {
-                setError({ title: "Face Not Detected", message: "Could not detect a face. Please ensure you are clearly visible." });
+                throw new Error("No face detected. Please ensure you are clearly visible in the photo.");
             }
         } catch (err) {
-            console.error("API Error:", err);
+            console.error("API Error marking attendance:", err);
             if (err instanceof Error && err.message === "RATE_LIMIT") {
-                setError({ title: "Trying Too Frequently", message: "Please wait a moment before marking attendance again." });
-            } else {
-                setError({ title: "Analysis Failed", message: "Could not verify attendance. Please try again." });
+                throw new Error("Trying too frequently. Please wait a moment before marking again.");
             }
-        } finally {
-            setIsMarking(false);
-            isProcessing.current = false;
+            const message = err instanceof Error ? err.message : "Could not verify attendance due to an API error. Please try again.";
+            throw new Error(message);
         }
     };
     
-    const handleLinkFace = async () => {
-        if (isProcessing.current || !videoRef.current || !canvasRef.current || !stream || currentUser.isBlocked) return;
-
-        setIsLinking(true);
-        isProcessing.current = true;
-        setError(null);
-
-        const video = videoRef.current;
-        const canvas = canvasRef.current;
-        const context = canvas.getContext('2d');
-        if (!context) {
-            setIsLinking(false);
-            isProcessing.current = false;
-            return;
+    const handleLinkFace = async (base64Data: string) => {
+        if (currentUser.isBlocked) {
+            throw new Error("Cannot link face while account is blocked.");
         }
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-
         try {
-            const result = await detectFacesAndHands(base64Data);
-            if (result.faces.length > 0) {
-                await onLinkFace();
-            } else {
-                setError({ title: "Face Not Detected", message: "Could not detect a face. Please ensure you are clearly visible and well-lit." });
-            }
+            await onLinkFace();
         } catch (err) {
             console.error("Link Face Error:", err);
-            if (err instanceof Error && err.message === "RATE_LIMIT") {
-                setError({ title: "Trying Too Frequently", message: "Please wait a moment before trying to link your face again." });
-            } else {
-                setError({ title: "Linking Failed", message: err instanceof Error ? err.message : "Could not link your face. Please try again." });
-            }
-        } finally {
-            setIsLinking(false);
-            isProcessing.current = false;
+            throw err;
         }
     };
 
+    const handleCapture = (base64Data: string) => {
+        if (captureMode === 'MARK') {
+            return handleMarkAttendance(base64Data);
+        } else {
+            return handleLinkFace(base64Data);
+        }
+    };
 
     return (
         <div className="w-full max-w-7xl mx-auto flex flex-col animate-fade-in">
+             {isCaptureModalOpen && (
+                <AttendanceCaptureModal
+                    onClose={() => setIsCaptureModalOpen(false)}
+                    onCapture={handleCapture}
+                    title={captureMode === 'MARK' ? "Mark Attendance" : "Link Face ID"}
+                    actionText={captureMode === 'MARK' ? "Capture & Mark" : "Capture & Link"}
+                />
+            )}
              <header className="mb-6 w-full flex justify-between items-center">
                 <div className="flex items-center gap-4">
                     {currentUser.photoBase64 ? (
@@ -258,107 +268,70 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ currentUser,
             </header>
 
             <main className="w-full bg-slate-800/40 rounded-2xl shadow-2xl p-6 md:p-8 border border-slate-800 backdrop-blur-sm">
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    <div className="lg:col-span-2 space-y-6">
-                        <StatusCard 
-                            isBlocked={currentUser.isBlocked} 
-                            isFaceLinked={isFaceLinked}
-                            cameraActive={!!stream} 
-                            lastLogTimestamp={lastLogTimestamp}
-                        />
-
-                        <div className={`relative w-full aspect-video bg-slate-900 rounded-lg overflow-hidden border-2 border-slate-800 shadow-inner`}>
-                            <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-                            <canvas ref={canvasRef} className="hidden" />
-                            {!stream && 
-                                <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 bg-opacity-80 p-4 text-center">
-                                    <p className="text-gray-300">Start your camera to proceed.</p>
-                                </div>
-                            }
-                        </div>
-                        
-                        {!currentUser.isBlocked && (
-                             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                                <button
-                                    onClick={stream ? handleStopCamera : handleStartCamera}
-                                    disabled={currentUser.isBlocked}
-                                    className={`w-full sm:w-auto px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-opacity-50 flex items-center justify-center shadow-lg transform hover:scale-105 active:translate-y-0.5 ${
-                                        stream
-                                            ? 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 focus:ring-red-500 text-white'
-                                            : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:ring-indigo-500 text-white'
-                                    } disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100`}
-                                >
-                                    <CameraIcon className="w-6 h-6 mr-3" />
-                                    {stream ? 'Stop Camera' : 'Start Camera'}
-                                </button>
-                                
-                                {isFaceLinked ? (
-                                    <button
-                                        onClick={handleMarkAttendance}
-                                        disabled={!stream || isMarking}
-                                        className="w-full sm:w-auto px-8 py-3 rounded-full text-lg font-semibold text-white bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 active:translate-y-0.5 flex items-center justify-center"
-                                    >
-                                        {isMarking ? (
-                                            <>
-                                                <span className="w-5 h-5 border-2 border-t-2 border-gray-200 border-t-transparent rounded-full animate-spin mr-3"></span>
-                                                Marking...
-                                            </>
-                                        ) : (
-                                            "Mark My Attendance"
-                                        )}
-                                    </button>
-                                ) : (
-                                     <button
-                                        onClick={handleLinkFace}
-                                        disabled={!stream || isLinking}
-                                        className="w-full sm:w-auto px-8 py-3 rounded-full text-lg font-semibold text-white bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 active:translate-y-0.5 flex items-center justify-center"
-                                    >
-                                        {isLinking ? (
-                                            <>
-                                                <span className="w-5 h-5 border-2 border-t-2 border-gray-200 border-t-transparent rounded-full animate-spin mr-3"></span>
-                                                Linking...
-                                            </>
-                                        ) : (
-                                            "Link My Face"
-                                        )}
-                                    </button>
-                                )}
-
-                            </div>
-                        )}
-
-                        {error && (
-                            <div className="text-center rounded-lg p-3 animate-fade-in text-yellow-300 bg-yellow-900/50 border border-yellow-700">
-                                <p className="font-bold">{error.title}</p>
-
-                                <p className="text-sm">{error.message}</p>
-                            </div>
-                        )}
+                <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                    <div className="lg:col-span-2 flex flex-col gap-8">
+                        <AttendanceStatusPanel
+                            status={attendanceStatus}
+                            lastLogTime={todaysAttendance ? new Date(todaysAttendance.timestamp) : null}
+                            onMarkAttendanceClick={() => {
+                                setCaptureMode('MARK');
+                                setIsCaptureModalOpen(true);
+                            }}
+                            onLinkFaceClick={() => {
+                                setCaptureMode('LINK');
+                                setIsCaptureModalOpen(true);
+                            }}
+                         />
+                         <AttendanceCalendar studentAttendance={studentAttendance} />
                     </div>
 
-                    <div className="lg:col-span-1">
-                         <h3 className="text-lg font-bold text-gray-200 mb-3">Your Attendance Log</h3>
-                         <div className="bg-slate-900/50 rounded-lg max-h-[60vh] overflow-y-auto">
+                    <div className="lg:col-span-3">
+                         <div className="bg-slate-900/50 p-6 rounded-lg mb-6">
+                            <h3 className="text-xl font-bold text-gray-200 mb-4">Profile & Monthly Stats</h3>
+                            <div className="flex flex-col sm:flex-row gap-6">
+                                <div className="flex-1 space-y-2 text-sm">
+                                    <p className="flex justify-between"><span className="text-gray-400">Department:</span> <span className="font-semibold text-white">{currentUser.department}</span></p>
+                                    <p className="flex justify-between"><span className="text-gray-400">Year:</span> <span className="font-semibold text-white">{currentUser.year}</span></p>
+                                </div>
+                                <div className="flex-1 space-y-2 text-sm border-t sm:border-t-0 sm:border-l border-slate-700 pt-4 sm:pt-0 sm:pl-6">
+                                    <p className="flex justify-between"><span className="text-gray-400">Days Present (This Month):</span> <span className="font-semibold text-white">{attendanceStats.daysPresent} / {attendanceStats.totalDays}</span></p>
+                                    <div>
+                                        <p className="text-gray-400 mb-1">Attendance % (This Month):</p>
+                                        <div className="w-full bg-slate-700 rounded-full h-2.5">
+                                            <div className="bg-gradient-to-r from-teal-400 to-cyan-500 h-2.5 rounded-full" style={{width: `${attendanceStats.percentage}%`}}></div>
+                                        </div>
+                                        <p className="text-right font-bold text-white mt-1">{attendanceStats.percentage}%</p>
+                                    </div>
+                                </div>
+                            </div>
+                         </div>
+
+                         <h3 className="text-xl font-bold text-gray-200 mb-4">Full Attendance Log</h3>
+                         <div className="bg-slate-900/50 rounded-lg max-h-[40vh] overflow-y-auto">
                             {studentAttendance.length === 0 ? (
-                                <p className="text-center text-gray-500 p-8">No attendance records found.</p>
+                                <div className="text-center text-gray-500 p-8">
+                                    <EmptyLogIcon />
+                                    <h4 className="mt-4 text-lg font-semibold text-gray-400">No History Yet</h4>
+                                    <p className="mt-1 text-sm">Your attendance records will appear here once you start logging them.</p>
+                                </div>
                             ) : (
                                 <table className="w-full text-left">
-                                    <thead className="sticky top-0 bg-slate-900/80 backdrop-blur-sm">
+                                    <thead className="sticky top-0 bg-slate-900/80 backdrop-blur-sm z-10">
                                         <tr>
-                                            <th className="p-3 text-sm font-semibold text-gray-400">Date</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-400">Time</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-400">Emotion</th>
+                                            <th className="p-3 text-xs font-semibold uppercase text-gray-500 tracking-wider border-b-2 border-slate-800">Date</th>
+                                            <th className="p-3 text-xs font-semibold uppercase text-gray-500 tracking-wider border-b-2 border-slate-800">Time</th>
+                                            <th className="p-3 text-xs font-semibold uppercase text-gray-500 tracking-wider border-b-2 border-slate-800">Emotion</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-800">
                                         {studentAttendance.map(record => {
                                             const date = new Date(record.timestamp);
                                             return (
-                                                <tr key={record.timestamp} className="hover:bg-slate-800/60">
-                                                    <td className="p-3 text-sm text-gray-300">{date.toLocaleDateString()}</td>
-                                                    <td className="p-3 text-sm text-gray-300">{date.toLocaleTimeString()}</td>
+                                                <tr key={record.timestamp} className="hover:bg-slate-800/60 transition-colors">
+                                                    <td className="p-3 text-sm text-gray-300 font-mono">{date.toLocaleDateString()}</td>
+                                                    <td className="p-3 text-sm text-gray-300 font-mono">{date.toLocaleTimeString()}</td>
                                                     <td className="p-3 text-sm text-gray-300 flex items-center gap-2">
-                                                        <span>{emotionUIConfig[record.emotion].emoji}</span>
+                                                        <span className="text-lg">{emotionUIConfig[record.emotion].emoji}</span>
                                                         <span>{record.emotion}</span>
                                                     </td>
                                                 </tr>
@@ -368,6 +341,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ currentUser,
                                 </table>
                             )}
                          </div>
+                         <StudentMarksPanel marks={currentUser.marks || []} />
+                         <MonthlyAttendanceSummary monthlyStats={monthlyStats} />
                     </div>
                 </div>
             </main>

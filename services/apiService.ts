@@ -1,5 +1,3 @@
-
-
 import { 
     loadStudentDirectory, saveStudentDirectory, 
     loadAdminDirectory, saveAdminDirectory,
@@ -58,11 +56,11 @@ export const registerStudent = (student: StudentInfo): Promise<StudentInfo> => {
                 reject(new Error('A student with this Roll Number already exists.'));
                 return;
             }
-            // The incoming student object, which may include a photoBase64 string,
-            // is stored directly. The storage service handles serialization.
-            students.set(student.rollNumber, student);
+            // Ensure marks array exists on new student
+            const newStudent = { ...student, marks: student.marks || [] };
+            students.set(newStudent.rollNumber, newStudent);
             saveStudentDirectory(students);
-            resolve(student);
+            resolve(newStudent);
         }, API_LATENCY);
     });
 };
@@ -156,6 +154,45 @@ export const getUserById = (id: string): Promise<(AdminInfo & { userType: 'ADMIN
 
 
 // --- Data Mutation ---
+export type MarkUpdate = {
+    rollNumber: string;
+    subject: string;
+    midTerm: 'mid1' | 'mid2';
+    marks: number | null;
+};
+
+export const updateBulkStudentMarks = (updates: MarkUpdate[]): Promise<Map<string, StudentInfo>> => {
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            const students = loadStudentDirectory();
+            
+            updates.forEach(update => {
+                const student = students.get(update.rollNumber);
+                if (student) {
+                    if (!student.marks) {
+                        student.marks = [];
+                    }
+                    // Case-insensitive subject matching
+                    let subjectMarks = student.marks.find(m => m.subject.toLowerCase() === update.subject.toLowerCase());
+                    if (subjectMarks) {
+                        subjectMarks[update.midTerm] = update.marks;
+                    } else {
+                        student.marks.push({
+                            subject: update.subject,
+                            mid1: update.midTerm === 'mid1' ? update.marks : null,
+                            mid2: update.midTerm === 'mid2' ? update.marks : null,
+                        });
+                    }
+                    students.set(student.rollNumber, student);
+                }
+            });
+
+            saveStudentDirectory(students);
+            resolve(students);
+        }, API_LATENCY);
+    });
+};
+
 export const linkFaceToStudent = (persistentId: number, rollNumber: string): Promise<Map<number, string>> => {
     return new Promise((resolve) => {
         const links = loadFaceLinks();

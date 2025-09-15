@@ -17,6 +17,9 @@ export const StudentRegistrationScreen: React.FC<StudentRegistrationScreenProps>
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const [photoBase64, setPhotoBase64] = useState<string | null>(null);
+    const [phoneNumber, setPhoneNumber] = useState('');
+    const [section, setSection] = useState('1');
+
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -41,6 +44,8 @@ export const StudentRegistrationScreen: React.FC<StudentRegistrationScreenProps>
                 password,
                 isBlocked: false,
                 photoBase64: photoBase64,
+                phoneNumber,
+                section,
             };
             await onRegister(newStudent);
         } catch (err) {
@@ -64,8 +69,16 @@ export const StudentRegistrationScreen: React.FC<StudentRegistrationScreenProps>
                  <form onSubmit={handleSubmit} className="space-y-4">
                     <InputField label="Full Name" type="text" value={name} onChange={setName} required />
                     <InputField label="Roll Number (Username)" type="text" value={rollNumber} onChange={setRollNumber} required />
+                    <InputField label="Phone Number" type="tel" value={phoneNumber} onChange={setPhoneNumber} required />
                     <SelectField label="Department / Branch" value={department} onChange={setDepartment} options={departments} required />
-                    <SelectField label="Year" value={year} onChange={setYear} options={Object.values(Year)} required />
+                    <div className="flex gap-4">
+                        <div className="flex-1">
+                            <SelectField label="Year" value={year} onChange={setYear} options={Object.values(Year)} required />
+                        </div>
+                        <div className="flex-1">
+                            <SelectField label="Section" value={section} onChange={setSection} options={['1', '2', '3', '4']} required />
+                        </div>
+                    </div>
                     <InputField label="Password" type="password" value={password} onChange={setPassword} required />
                     
                     <CameraCapture

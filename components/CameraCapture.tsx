@@ -11,6 +11,13 @@ interface CameraCaptureProps {
     photoQuality?: number;
 }
 
+const UploadIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+    </svg>
+);
+
+
 export const CameraCapture: React.FC<CameraCaptureProps> = ({
     onPhotoCaptured,
     onRetake,
@@ -24,25 +31,39 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
     const [error, setError] = useState<string | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const startCamera = async () => {
         setError(null);
         try {
-            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                const mediaStream = await navigator.mediaDevices.getUserMedia({
-                    video: { width, height },
-                    audio: false
-                });
-                setStream(mediaStream);
-                if (videoRef.current) {
-                    videoRef.current.srcObject = mediaStream;
-                }
-            } else {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 setError("Your browser does not support camera access.");
+                return;
+            }
+
+            if (navigator.permissions && navigator.permissions.query) {
+                const permission = await navigator.permissions.query({ name: 'camera' as PermissionName });
+                if (permission.state === 'denied') {
+                    setError("Camera access is blocked. Please go to your browser settings to allow camera access for this site.");
+                    return;
+                }
+            }
+
+            const mediaStream = await navigator.mediaDevices.getUserMedia({
+                video: { width, height },
+                audio: false
+            });
+            setStream(mediaStream);
+            if (videoRef.current) {
+                videoRef.current.srcObject = mediaStream;
             }
         } catch (err) {
             console.error("Camera error:", err);
-            setError("Could not access camera. Please check permissions.");
+            if (err instanceof DOMException && err.name === 'NotAllowedError') {
+                setError("You denied camera access. Please allow camera access in your browser settings to continue.");
+            } else {
+                setError("Could not access camera. It might be in use by another application.");
+            }
         }
     };
 
@@ -66,6 +87,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
     }, [photo]);
 
     const handleCapture = () => {
+        setError(null);
         if (videoRef.current && canvasRef.current) {
             const video = videoRef.current;
             const canvas = canvasRef.current;
@@ -79,6 +101,35 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
         }
     };
     
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setError(null);
+        const file = e.target.files?.[0];
+        if (file) {
+            if (!file.type.startsWith('image/')) {
+                setError("Please select a valid image file (PNG, JPG).");
+                e.target.value = '';
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (loadEvent) => {
+                if (loadEvent.target?.result) {
+                    onPhotoCaptured(loadEvent.target.result as string);
+                } else {
+                    setError("Could not read the selected file.");
+                }
+            };
+            reader.onerror = () => {
+                 setError("Error reading the selected file.");
+            };
+            reader.readAsDataURL(file);
+        }
+        e.target.value = '';
+    };
+
+    const handleUploadClick = () => {
+        fileInputRef.current?.click();
+    };
+
     return (
         <div>
             <label className="block text-sm font-medium text-gray-300 mb-2 text-center">Profile Photo</label>
@@ -86,18 +137,35 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
                 {photo ? (
                     <img src={photo} alt="Captured profile" className="w-full h-full object-cover" />
                 ) : (
-                    <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover"></video>
+                    <>
+                        <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover"></video>
+                        {error && <div className="absolute inset-0 flex items-center justify-center p-4 bg-black/50 text-red-400 text-center text-sm">{error}</div>}
+                    </>
                 )}
                 <canvas ref={canvasRef} className="hidden"></canvas>
-                {error && <div className="absolute inset-0 flex items-center justify-center p-4 bg-black/50 text-red-400 text-center text-sm">{error}</div>}
             </div>
+            
+            <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept="image/jpeg, image/png"
+                className="hidden"
+            />
+            
             <div className="flex justify-center mt-3">
                 {photo ? (
-                    <button type="button" onClick={onRetake} className="px-4 py-2 rounded-md font-semibold text-white bg-rose-600 hover:bg-rose-700 transition-all duration-150 ease-in-out active:translate-y-0.5 shadow-lg">Retake Photo</button>
+                    <button type="button" onClick={onRetake} className="px-6 py-2 rounded-md font-semibold text-white bg-rose-600 hover:bg-rose-700 transition-all duration-150 ease-in-out active:translate-y-0.5 shadow-lg">Retake Photo</button>
                 ) : (
-                    <button type="button" onClick={handleCapture} disabled={!stream} className="px-4 py-2 rounded-md font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-all duration-150 ease-in-out active:translate-y-0.5 shadow-lg flex items-center gap-2 disabled:opacity-50">
-                        <CameraIcon className="w-5 h-5"/> Capture Photo
-                    </button>
+                    <div className="flex items-center gap-4">
+                         <button type="button" onClick={handleCapture} disabled={!stream} className="px-4 py-2 rounded-md font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-all duration-150 ease-in-out active:translate-y-0.5 shadow-lg flex items-center gap-2 disabled:opacity-50">
+                            <CameraIcon className="w-5 h-5"/> Capture
+                        </button>
+                        <span className="text-gray-500 text-sm">or</span>
+                        <button type="button" onClick={handleUploadClick} className="px-4 py-2 rounded-md font-semibold text-indigo-300 bg-slate-700 hover:bg-slate-600 transition-all duration-150 ease-in-out active:translate-y-0.5 shadow-lg flex items-center gap-2">
+                            <UploadIcon className="w-5 h-5"/> Upload File
+                        </button>
+                    </div>
                 )}
             </div>
         </div>

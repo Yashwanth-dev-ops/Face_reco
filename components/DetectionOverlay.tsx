@@ -13,13 +13,14 @@ interface DetectionOverlayProps {
 const BoundingBox: React.FC<{
     box: { x: number, y: number, width: number, height: number };
     label: string;
+    idLabel: string;
     emoji: string;
     colors: { border: string; labelBg: string; };
     videoWidth: number;
     videoHeight: number;
     face: FaceResult;
     onRegister: (face: FaceResult) => void;
-}> = ({ box, label, emoji, colors, videoWidth, videoHeight, face, onRegister }) => {
+}> = ({ box, label, idLabel, emoji, colors, videoWidth, videoHeight, face, onRegister }) => {
     
     const style: React.CSSProperties = {
         position: 'absolute',
@@ -39,12 +40,13 @@ const BoundingBox: React.FC<{
             <div className={`absolute -top-7 left-0 text-sm font-bold text-white px-2 py-1 rounded-md ${colors.labelBg} bg-opacity-90 backdrop-blur-sm whitespace-nowrap`}>
                 {emoji} {label} {isBlocked && '(Blocked)'}
             </div>
+            
             {!isRegistered && face.persistentId && (
                 <button
                     onClick={() => onRegister(face)}
-                    className="absolute top-1 right-1 bg-indigo-600 text-white text-xs font-bold px-2 py-1 rounded-md hover:bg-indigo-500 transition-colors shadow-lg"
+                    className="w-full bg-indigo-600/90 backdrop-blur-sm text-white text-sm font-bold p-2 rounded-b-md hover:bg-indigo-500 transition-colors shadow-lg animate-pulse-fast text-center"
                 >
-                    Link Student
+                    Link <span className="font-extrabold">{idLabel}</span>
                 </button>
             )}
         </div>
@@ -68,6 +70,7 @@ export const DetectionOverlay: React.FC<DetectionOverlayProps> = ({ result, vide
                         key={`face-${face.persistentId || index}`}
                         box={face.boundingBox}
                         label={label}
+                        idLabel={idLabel}
                         emoji={config.emoji}
                         colors={config.colors}
                         videoWidth={videoWidth}

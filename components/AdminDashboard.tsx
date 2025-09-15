@@ -1,9 +1,9 @@
-
-
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { StudentInfo, AdminInfo, Designation, Year, AttendanceRecord } from '../types';
 import { emotionUIConfig } from './uiConfig';
+import { exportMonthlySummaryToCSV, exportMarksReportToCSV, exportStudentDetailsReportToCSV } from '../services/csvExportService';
+import { MarksEntry } from './MarksEntry';
+import { MarkUpdate } from '../services/apiService';
 
 interface AdminDashboardProps {
     currentUser: AdminInfo;
@@ -18,6 +18,7 @@ interface AdminDashboardProps {
     onToggleBlockAdmin: (idNumber: string) => void;
     onLogout: () => void;
     onDownload: (filteredAttendance: AttendanceRecord[]) => void;
+    onUpdateMarks: (updates: MarkUpdate[]) => Promise<void>;
 }
 
 const TrashIcon: React.FC<{className?: string}> = ({className}) => (
@@ -75,7 +76,7 @@ const StudentProfileModal: React.FC<{
                         <div>
                             <h2 className="text-3xl font-bold text-white">{student.name}</h2>
                             <p className="text-lg text-gray-400">{student.rollNumber}</p>
-                            <p className="text-md text-indigo-300 mt-1">{student.department} - {student.year}</p>
+                            <p className="text-md text-indigo-300 mt-1">{student.department} - {student.year} - Sec {student.section}</p>
                         </div>
                     </div>
                      <button
@@ -138,11 +139,12 @@ const StudentProfileModal: React.FC<{
     );
 };
 
-const StudentManagementPanel: React.FC<Omit<AdminDashboardProps, 'adminDirectory' | 'onDeleteAdmin' | 'onToggleBlockAdmin'>> = (props) => {
-    const { currentUser, studentDirectory, departments, attendance, faceLinks, onDeleteStudent, onToggleBlockStudent, onDownload } = props;
+const StudentManagementPanel: React.FC<Omit<AdminDashboardProps, 'onDeleteAdmin' | 'onToggleBlockAdmin' | 'onUpdateMarks'>> = (props) => {
+    const { currentUser, studentDirectory, adminDirectory, departments, attendance, faceLinks, onDeleteStudent, onToggleBlockStudent, onDownload } = props;
     const [selectedStudent, setSelectedStudent] = useState<StudentInfo | null>(null);
     const [departmentFilter, setDepartmentFilter] = useState<string>('ALL');
     const [yearFilter, setYearFilter] = useState<string>('ALL');
+    const [sectionFilter, setSectionFilter] = useState<string>('ALL');
 
     const hasFullControl = currentUser.designation === Designation.Principal || currentUser.designation === Designation.VicePrincipal || currentUser.designation === Designation.HOD;
     const canDelete = currentUser.designation !== Designation.Incharge;
@@ -152,7 +154,10 @@ const StudentManagementPanel: React.FC<Omit<AdminDashboardProps, 'adminDirectory
             setDepartmentFilter(currentUser.department);
         }
         if (currentUser.designation === Designation.Incharge) {
-            setYearFilter(Year.First); // Default to first year for incharge
+            setYearFilter(currentUser.year || Year.First);
+            if (currentUser.section && currentUser.section !== 'All Sections') {
+                setSectionFilter(currentUser.section);
+            }
         }
     }, [currentUser]);
 
@@ -161,11 +166,12 @@ const StudentManagementPanel: React.FC<Omit<AdminDashboardProps, 'adminDirectory
         return Array.from(studentDirectory.values()).filter(student => {
             const departmentMatch = departmentFilter === 'ALL' || student.department === departmentFilter;
             const yearMatch = yearFilter === 'ALL' || student.year === yearFilter;
-            return departmentMatch && yearMatch;
+            const sectionMatch = sectionFilter === 'ALL' || student.section === sectionFilter;
+            return departmentMatch && yearMatch && sectionMatch;
         }).sort((a, b) => a.name.localeCompare(b.name));
-    }, [studentDirectory, departmentFilter, yearFilter]);
+    }, [studentDirectory, departmentFilter, yearFilter, sectionFilter]);
 
-    const handleDownloadClick = () => {
+    const handleDownloadLogClick = () => {
         const filteredRollNumbers = new Set(filteredStudents.map(s => s.rollNumber));
         const persistentIdsForReport = new Set<number>();
         for (const [pid, roll] of faceLinks.entries()) {
@@ -175,6 +181,14 @@ const StudentManagementPanel: React.FC<Omit<AdminDashboardProps, 'adminDirectory
         }
         const filteredAttendance = attendance.filter(record => persistentIdsForReport.has(record.persistentId));
         onDownload(filteredAttendance);
+    };
+
+    const handleDownloadSummaryClick = () => {
+        exportMonthlySummaryToCSV(filteredStudents, attendance, faceLinks);
+    };
+
+    const handleDownloadDetailsClick = () => {
+        exportStudentDetailsReportToCSV(filteredStudents, Array.from(adminDirectory.values()));
     };
 
     return (
@@ -191,9 +205,17 @@ const StudentManagementPanel: React.FC<Omit<AdminDashboardProps, 'adminDirectory
                 <div className="lg:col-span-1 space-y-6">
                     <div>
                         <h2 className="text-2xl font-bold text-indigo-300 mb-4">Actions</h2>
-                         <button onClick={handleDownloadClick} disabled={filteredStudents.length === 0} className="w-full px-6 py-3 rounded-lg text-lg font-semibold text-white bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
-                            Download Report (CSV)
-                        </button>
+                         <div className="space-y-3">
+                            <button onClick={handleDownloadLogClick} disabled={filteredStudents.length === 0} className="w-full px-6 py-3 rounded-lg font-semibold text-white bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
+                                Download Daily Log (CSV)
+                            </button>
+                             <button onClick={handleDownloadSummaryClick} disabled={filteredStudents.length === 0} className="w-full px-6 py-3 rounded-lg font-semibold text-white bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
+                                Download Monthly Summary (CSV)
+                            </button>
+                            <button onClick={handleDownloadDetailsClick} disabled={filteredStudents.length === 0} className="w-full px-6 py-3 rounded-lg font-semibold text-white bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
+                                Download Student Details (CSV)
+                            </button>
+                        </div>
                     </div>
                      <div>
                         <h2 className="text-2xl font-bold text-indigo-300 mb-4">Student Controls</h2>
@@ -210,123 +232,144 @@ const StudentManagementPanel: React.FC<Omit<AdminDashboardProps, 'adminDirectory
                      <div className="flex justify-between items-center mb-4">
                         <h2 className="text-2xl font-bold text-indigo-300">Registered Students ({filteredStudents.length})</h2>
                         <div className="flex gap-2">
-                            <select value={departmentFilter} onChange={e => setDepartmentFilter(e.target.value)} disabled={currentUser.designation !== Designation.Principal && currentUser.designation !== Designation.VicePrincipal} className="bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500 transition">
+                            <select value={departmentFilter} onChange={e => setDepartmentFilter(e.target.value)} disabled={currentUser.designation !== Designation.Principal && currentUser.designation !== Designation.VicePrincipal} className="bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500 transition disabled:cursor-not-allowed disabled:bg-slate-800">
                                 {currentUser.designation !== Designation.HOD && currentUser.designation !== Designation.Incharge && <option value="ALL">All Departments</option>}
                                 {departments.map(d => <option key={d} value={d}>{d}</option>)}
                             </select>
-                            <select value={yearFilter} onChange={e => setYearFilter(e.target.value)} className="bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500 transition">
-                                {(currentUser.designation !== Designation.Incharge) && <option value="ALL">All Years</option>}
+                            <select value={yearFilter} onChange={e => setYearFilter(e.target.value)} disabled={currentUser.designation === Designation.Incharge} className="bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500 transition disabled:cursor-not-allowed disabled:bg-slate-800">
+                                {currentUser.designation !== Designation.Incharge && <option value="ALL">All Years</option>}
                                 {Object.values(Year).map(y => <option key={y} value={y}>{y}</option>)}
                             </select>
+                            <select value={sectionFilter} onChange={e => setSectionFilter(e.target.value)} disabled={currentUser.designation === Designation.Incharge && currentUser.section !== 'All Sections'} className="bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500 transition disabled:cursor-not-allowed disabled:bg-slate-800">
+                                <option value="ALL">All Sections</option>
+                                <option value="1">Section 1</option>
+                                <option value="2">Section 2</option>
+                                <option value="3">Section 3</option>
+                                <option value="4">Section 4</option>
+                            </select>
                         </div>
-                     </div>
+                    </div>
                      <div className="bg-slate-900/50 rounded-lg max-h-[60vh] overflow-y-auto">
                         {filteredStudents.length === 0 ? (
-                            <p className="text-center text-gray-500 p-8">No students match the current filters.</p>
+                            <p className="text-center text-gray-500 p-8">No students found matching your filters.</p>
                         ) : (
                             <div className="divide-y divide-slate-800">
                             {filteredStudents.map(student => (
-                                <div key={student.rollNumber} onClick={() => setSelectedStudent(student)} className={`p-4 flex justify-between items-center hover:bg-slate-800/60 transition-colors cursor-pointer ${student.isBlocked ? 'opacity-50' : ''}`}>
-                                    <div className="flex items-center gap-4">
+                                <div key={student.rollNumber} className={`p-4 flex justify-between items-center ${student.isBlocked ? 'opacity-50' : 'hover:bg-slate-800/60 transition-colors cursor-pointer'}`}>
+                                    <div className="flex items-center gap-4 flex-grow" onClick={() => !student.isBlocked && setSelectedStudent(student)}>
                                         {student.photoBase64 ? (
                                             <img src={student.photoBase64} alt={student.name} className="w-12 h-12 rounded-full object-cover border-2 border-slate-600" />
                                         ) : (
-                                            <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-indigo-300 font-bold text-lg">
+                                             <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-indigo-300 font-bold text-lg">
                                                 {student.name.charAt(0)}
                                             </div>
                                         )}
                                         <div>
                                             <p className="font-bold text-white">{student.name} {student.isBlocked && <span className="text-xs font-bold text-red-400">(Blocked)</span>}</p>
                                             <p className="text-sm text-gray-400">{student.rollNumber}</p>
-                                            <p className="text-xs text-indigo-300 bg-indigo-900/50 inline-block px-2 py-0.5 rounded mt-1">{student.department} - {student.year}</p>
+                                            <p className="text-xs text-indigo-300 bg-indigo-900/50 inline-block px-2 py-0.5 rounded mt-1">{student.department} - {student.year} - Sec {student.section}</p>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        {hasFullControl && (
-                                            <button onClick={(e) => { e.stopPropagation(); onToggleBlockStudent(student.rollNumber); }} className="text-gray-500 hover:text-yellow-500 transition-colors p-2 rounded-full hover:bg-yellow-500/10" title={student.isBlocked ? "Unblock Student" : "Block Student"}>
-                                                <BlockIcon className="w-5 h-5" />
-                                            </button>
-                                        )}
-                                        {canDelete && (
-                                            <button onClick={(e) => { e.stopPropagation(); onDeleteStudent(student.rollNumber); }} className="text-gray-500 hover:text-red-500 transition-colors p-2 rounded-full hover:bg-red-500/10" title="Delete Student">
-                                                <TrashIcon className="w-5 h-5" />
-                                            </button>
-                                        )}
-                                    </div>
+                                    {hasFullControl && (
+                                        <div className="flex gap-2">
+                                            <button onClick={() => onToggleBlockStudent(student.rollNumber)} className="p-2 rounded-full text-gray-400 hover:text-yellow-400 hover:bg-slate-700 transition-colors" title={student.isBlocked ? 'Unblock Student' : 'Block Student'}><BlockIcon className="w-5 h-5"/></button>
+                                            {canDelete && <button onClick={() => onDeleteStudent(student.rollNumber)} className="p-2 rounded-full text-gray-400 hover:text-red-400 hover:bg-slate-700 transition-colors" title="Delete Student"><TrashIcon className="w-5 h-5"/></button>}
+                                        </div>
+                                    )}
                                 </div>
                             ))}
                             </div>
                         )}
-                     </div>
+                    </div>
                 </div>
             </div>
         </>
     );
 };
 
-const StaffManagementPanel: React.FC<Pick<AdminDashboardProps, 'adminDirectory' | 'onDeleteAdmin' | 'onToggleBlockAdmin'>> = ({ adminDirectory, onDeleteAdmin, onToggleBlockAdmin }) => {
-    
-    const staffList = useMemo(() => {
-        return Array.from(adminDirectory.values())
-            .filter(admin => admin.designation !== Designation.Principal)
-            .sort((a, b) => a.name.localeCompare(b.name));
-    }, [adminDirectory]);
+const StaffManagementPanel: React.FC<Pick<AdminDashboardProps, 'currentUser' | 'adminDirectory' | 'onDeleteAdmin' | 'onToggleBlockAdmin'>> = ({ currentUser, adminDirectory, onDeleteAdmin, onToggleBlockAdmin }) => {
+     const [departmentFilter, setDepartmentFilter] = useState<string>('ALL');
 
+    const filteredAdmins = useMemo(() => {
+        return Array.from(adminDirectory.values()).filter(admin => {
+            const departmentMatch = departmentFilter === 'ALL' || admin.department === departmentFilter;
+            // Principal/VP should not be filterable by department
+            if (admin.designation === Designation.Principal || admin.designation === Designation.VicePrincipal) {
+                return true;
+            }
+            return departmentMatch;
+        }).sort((a, b) => a.name.localeCompare(b.name));
+    }, [adminDirectory, departmentFilter]);
+    
     return (
-        <div className="lg:col-span-2">
-             <div className="flex justify-between items-center mb-4">
-                <h2 className="text-2xl font-bold text-indigo-300">Registered Staff ({staffList.length})</h2>
-             </div>
-             <div className="bg-slate-900/50 rounded-lg max-h-[60vh] overflow-y-auto">
-                {staffList.length === 0 ? (
-                    <p className="text-center text-gray-500 p-8">No other staff members found.</p>
+        <div className="bg-slate-900/50 p-6 rounded-lg">
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold text-indigo-300">Staff Management ({filteredAdmins.length})</h2>
+            </div>
+            <div className="max-h-[70vh] overflow-y-auto">
+                 {filteredAdmins.length === 0 ? (
+                    <p className="text-center text-gray-500 p-8">No staff members found.</p>
                 ) : (
                     <div className="divide-y divide-slate-800">
-                    {staffList.map(staff => (
-                        <div key={staff.idNumber} className={`p-4 flex justify-between items-center hover:bg-slate-800/60 transition-colors ${staff.isBlocked ? 'opacity-50' : ''}`}>
+                    {filteredAdmins.map(admin => (
+                        <div key={admin.idNumber} className={`p-4 flex justify-between items-center ${admin.isBlocked ? 'opacity-50' : 'hover:bg-slate-800/60 transition-colors'}`}>
                             <div className="flex items-center gap-4">
-                                {staff.photoBase64 ? (
-                                    <img src={staff.photoBase64} alt={staff.name} className="w-12 h-12 rounded-full object-cover border-2 border-slate-600" />
+                                {admin.photoBase64 ? (
+                                    <img src={admin.photoBase64} alt={admin.name} className="w-12 h-12 rounded-full object-cover border-2 border-slate-600" />
                                 ) : (
-                                    <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-indigo-300 font-bold text-lg">
-                                        {staff.name.charAt(0)}
+                                     <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-indigo-300 font-bold text-lg">
+                                        {admin.name.charAt(0)}
                                     </div>
                                 )}
                                 <div>
-                                    <p className="font-bold text-white">{staff.name} {staff.isBlocked && <span className="text-xs font-bold text-red-400">(Blocked)</span>}</p>
-                                    <p className="text-sm text-gray-400">{staff.idNumber}</p>
-                                    <p className="text-xs text-teal-300 bg-teal-900/50 inline-block px-2 py-0.5 rounded mt-1">{staff.designation} - {staff.department}</p>
+                                    <p className="font-bold text-white">{admin.name} {admin.isBlocked && <span className="text-xs font-bold text-red-400">(Blocked)</span>}</p>
+                                    <p className="text-sm text-gray-400">{admin.idNumber}</p>
+                                    <p className="text-xs text-indigo-300 bg-indigo-900/50 inline-block px-2 py-0.5 rounded mt-1">
+                                        {admin.designation} - {admin.department}
+                                        {admin.designation === Designation.Incharge && admin.year && ` - ${admin.year.replace(' Year', '')} Year`}
+                                        {admin.designation === Designation.Incharge && admin.section && ` - Sec: ${admin.section}`}
+                                    </p>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                                <button onClick={() => onToggleBlockAdmin(staff.idNumber)} className="text-gray-500 hover:text-yellow-500 transition-colors p-2 rounded-full hover:bg-yellow-500/10" title={staff.isBlocked ? "Unblock Staff" : "Block Staff"}>
-                                    <BlockIcon className="w-5 h-5" />
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => onToggleBlockAdmin(admin.idNumber)}
+                                    disabled={admin.idNumber === currentUser.idNumber || admin.designation === Designation.Principal}
+                                    className="p-2 rounded-full text-gray-400 hover:text-yellow-400 hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title={admin.isBlocked ? 'Unblock Admin' : 'Block Admin'}
+                                >
+                                    <BlockIcon className="w-5 h-5"/>
                                 </button>
-                                <button onClick={() => onDeleteAdmin(staff.idNumber)} className="text-gray-500 hover:text-red-500 transition-colors p-2 rounded-full hover:bg-red-500/10" title="Delete Staff">
-                                    <TrashIcon className="w-5 h-5" />
+                                <button
+                                    onClick={() => onDeleteAdmin(admin.idNumber)}
+                                    disabled={admin.idNumber === currentUser.idNumber || admin.designation === Designation.Principal}
+                                    className="p-2 rounded-full text-gray-400 hover:text-red-400 hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title="Delete Admin"
+                                >
+                                    <TrashIcon className="w-5 h-5"/>
                                 </button>
                             </div>
                         </div>
                     ))}
                     </div>
                 )}
-             </div>
+            </div>
         </div>
     );
-};
-
+}
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
     const { currentUser, onLogout } = props;
-    const [activeTab, setActiveTab] = useState<'students' | 'staff'>('students');
+    const [activeTab, setActiveTab] = useState<'students' | 'staff' | 'marks'>('students');
 
-    const isPrincipal = currentUser.designation === Designation.Principal;
-
+    const canManageStaff = currentUser.designation === Designation.Principal || currentUser.designation === Designation.VicePrincipal;
+    const canManageMarks = [Designation.Principal, Designation.VicePrincipal, Designation.HOD, Designation.Incharge].includes(currentUser.designation);
+    
     return (
         <div className="w-full max-w-7xl mx-auto flex flex-col animate-fade-in">
              <header className="mb-6 w-full flex justify-between items-center">
                 <div className="flex items-center gap-4">
-                    {currentUser.photoBase64 ? (
+                     {currentUser.photoBase64 ? (
                         <img src={currentUser.photoBase64} alt={currentUser.name} className="w-14 h-14 rounded-full object-cover border-2 border-slate-600" />
                     ) : (
                          <img src="https://krucet.ac.in/wp-content/uploads/2020/09/cropped-kru-150-round-non-transparent-1.png" alt="Krishna University Logo" className="w-14 h-14 rounded-full" />
@@ -342,51 +385,46 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
             </header>
 
             <main className="w-full bg-slate-800/40 rounded-2xl shadow-2xl p-4 md:p-6 border border-slate-800 backdrop-blur-sm">
-                {isPrincipal && (
-                     <div className="border-b border-slate-700 mb-6">
-                        <nav className="-mb-px flex space-x-6" aria-label="Tabs">
-                            <button
-                                onClick={() => setActiveTab('students')}
-                                className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-lg transition-colors ${
-                                    activeTab === 'students'
-                                    ? 'border-indigo-400 text-indigo-300'
-                                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'
-                                }`}
-                            >
-                                Student Management
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('staff')}
-                                className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-lg transition-colors ${
-                                    activeTab === 'staff'
-                                    ? 'border-indigo-400 text-indigo-300'
-                                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'
-                                }`}
-                            >
+                <div className="border-b border-slate-700 mb-6">
+                    <nav className="-mb-px flex space-x-6" aria-label="Tabs">
+                         <button onClick={() => setActiveTab('students')} className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-lg transition-colors ${activeTab === 'students' ? 'border-indigo-400 text-indigo-300' : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'}`}>
+                            Student Management
+                        </button>
+                        {canManageStaff && (
+                            <button onClick={() => setActiveTab('staff')} className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-lg transition-colors ${activeTab === 'staff' ? 'border-indigo-400 text-indigo-300' : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'}`}>
                                 Staff Management
                             </button>
-                        </nav>
+                        )}
+                        {canManageMarks && (
+                             <button onClick={() => setActiveTab('marks')} className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-lg transition-colors ${activeTab === 'marks' ? 'border-indigo-400 text-indigo-300' : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'}`}>
+                                Marks Entry
+                            </button>
+                        )}
+                    </nav>
+                </div>
+
+                {activeTab === 'students' && <StudentManagementPanel {...props} />}
+                {activeTab === 'staff' && canManageStaff && <StaffManagementPanel {...props} />}
+                 {activeTab === 'marks' && canManageMarks && (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                         <div className="lg:col-span-2">
+                             <MarksEntry 
+                                currentUser={currentUser}
+                                studentDirectory={props.studentDirectory}
+                                departments={props.departments}
+                                onSaveMarks={props.onUpdateMarks}
+                            />
+                         </div>
+                         <div className="lg:col-span-1">
+                             <h2 className="text-2xl font-bold text-indigo-300 mb-4">Instructions</h2>
+                             <div className="bg-slate-900/50 p-4 rounded-lg text-gray-400 text-sm space-y-2">
+                                <p>1. <span className="font-bold text-gray-300">Select Criteria:</span> Choose the year, department, subject, and mid-term exam.</p>
+                                <p>2. <span className="font-bold text-gray-300">Load Students:</span> Click the button to display the student list.</p>
+                                <p>3. <span className="font-bold text-gray-300">Enter Marks:</span> Input the marks for each student.</p>
+                                <p>4. <span className="font-bold text-gray-300">Save Changes:</span> Click 'Save All Marks' to submit.</p>
+                             </div>
+                         </div>
                     </div>
-                )}
-                
-                {isPrincipal ? (
-                    activeTab === 'students' ? (
-                        <StudentManagementPanel {...props} />
-                    ) : (
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <div className="lg:col-span-1">
-                                <h2 className="text-2xl font-bold text-indigo-300 mb-4">Staff Controls</h2>
-                                <div className="bg-slate-900/50 p-4 rounded-lg text-gray-400 text-sm space-y-2">
-                                    <p><span className="font-bold text-gray-300">Block/Unblock:</span> Toggle a staff member's ability to log in.</p>
-                                    <p><span className="font-bold text-gray-300">Delete:</span> Permanently remove a staff member's account.</p>
-                                    <p className="text-xs text-yellow-400 pt-2 border-t border-slate-700/50">Note: Principal accounts cannot be blocked or deleted.</p>
-                                </div>
-                            </div>
-                            <StaffManagementPanel {...props} />
-                        </div>
-                    )
-                ) : (
-                     <StudentManagementPanel {...props} />
                 )}
             </main>
         </div>

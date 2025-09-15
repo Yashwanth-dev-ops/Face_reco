@@ -1,17 +1,20 @@
-
-
 import React, { useState, useMemo } from 'react';
 import { StudentInfo, AdminInfo, Year, AttendanceRecord } from '../types';
 import { emotionUIConfig } from './uiConfig';
+import { exportMonthlySummaryToCSV, exportStudentDetailsReportToCSV } from '../services/csvExportService';
+import { MarksEntry } from './MarksEntry';
+import { MarkUpdate } from '../services/apiService';
 
 
 interface TeacherDashboardProps {
     currentUser: AdminInfo;
     studentDirectory: Map<string, StudentInfo>;
+    adminDirectory: Map<string, AdminInfo>;
     attendance: AttendanceRecord[];
     faceLinks: Map<number, string>;
     onLogout: () => void;
     onDownload: (filteredAttendance: AttendanceRecord[]) => void;
+    onUpdateMarks: (updates: MarkUpdate[]) => Promise<void>;
 }
 
 const StudentProfileModal: React.FC<{
@@ -56,7 +59,7 @@ const StudentProfileModal: React.FC<{
                         <div>
                             <h2 className="text-3xl font-bold text-white">{student.name}</h2>
                             <p className="text-lg text-gray-400">{student.rollNumber}</p>
-                            <p className="text-md text-indigo-300 mt-1">{student.department} - {student.year}</p>
+                            <p className="text-md text-indigo-300 mt-1">{student.department} - {student.year} - Sec {student.section}</p>
                         </div>
                     </div>
                      <button
@@ -120,10 +123,11 @@ const StudentProfileModal: React.FC<{
 };
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = (props) => {
-    const { currentUser, studentDirectory, attendance, faceLinks, onLogout, onDownload } = props;
+    const { currentUser, studentDirectory, adminDirectory, attendance, faceLinks, onLogout, onDownload, onUpdateMarks } = props;
     
-    // Filtering and modal state
+    const [activeTab, setActiveTab] = useState<'attendance' | 'marks'>('attendance');
     const [yearFilter, setYearFilter] = useState<string>('ALL');
+    const [sectionFilter, setSectionFilter] = useState<string>('ALL');
     const [selectedStudent, setSelectedStudent] = useState<StudentInfo | null>(null);
 
     const filteredStudents = useMemo(() => {
@@ -131,11 +135,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = (props) => {
         return Array.from(studentDirectory.values()).filter(student => {
             const departmentMatch = student.department === currentUser.department;
             const yearMatch = yearFilter === 'ALL' || student.year === yearFilter;
-            return departmentMatch && yearMatch;
+            const sectionMatch = sectionFilter === 'ALL' || student.section === sectionFilter;
+            return departmentMatch && yearMatch && sectionMatch;
         }).sort((a, b) => a.name.localeCompare(b.name));
-    }, [studentDirectory, currentUser.department, yearFilter]);
+    }, [studentDirectory, currentUser.department, yearFilter, sectionFilter]);
 
-    const handleDownloadClick = () => {
+    const handleDownloadLogClick = () => {
         const filteredRollNumbers = new Set(filteredStudents.map(s => s.rollNumber));
         const persistentIdsForReport = new Set<number>();
         for (const [pid, roll] of faceLinks.entries()) {
@@ -145,6 +150,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = (props) => {
         }
         const filteredAttendance = attendance.filter(record => persistentIdsForReport.has(record.persistentId));
         onDownload(filteredAttendance);
+    };
+
+    const handleDownloadSummaryClick = () => {
+        exportMonthlySummaryToCSV(filteredStudents, attendance, faceLinks);
+    };
+
+    const handleDownloadDetailsClick = () => {
+        exportStudentDetailsReportToCSV(filteredStudents, Array.from(adminDirectory.values()));
     };
 
     return (
@@ -175,60 +188,124 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = (props) => {
             </header>
 
             <main className="w-full bg-slate-800/40 rounded-2xl shadow-2xl p-4 md:p-6 border border-slate-800 backdrop-blur-sm">
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div className="lg:col-span-1 space-y-6">
-                        <div>
-                            <h2 className="text-2xl font-bold text-indigo-300 mb-4">Actions</h2>
-                             <button onClick={handleDownloadClick} disabled={filteredStudents.length === 0} className="w-full px-6 py-3 rounded-lg text-lg font-semibold text-white bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
-                                Download Report (CSV)
-                            </button>
-                        </div>
-                         <div>
-                            <h2 className="text-2xl font-bold text-indigo-300 mb-4">Instructions</h2>
-                            <div className="bg-slate-900/50 p-4 rounded-lg text-gray-400 text-sm space-y-2">
-                                <p><span className="font-bold text-gray-300">View Profile:</span> Click on any student row to view their detailed profile and full attendance history.</p>
+                <div className="border-b border-slate-700 mb-6">
+                    <nav className="-mb-px flex space-x-6" aria-label="Tabs">
+                        <button
+                            onClick={() => setActiveTab('attendance')}
+                            className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-lg transition-colors ${
+                                activeTab === 'attendance'
+                                ? 'border-indigo-400 text-indigo-300'
+                                : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'
+                            }`}
+                        >
+                            Attendance Management
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('marks')}
+                            className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-lg transition-colors ${
+                                activeTab === 'marks'
+                                ? 'border-indigo-400 text-indigo-300'
+                                : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'
+                            }`}
+                        >
+                            Marks Entry
+                        </button>
+                    </nav>
+                </div>
+
+                {activeTab === 'attendance' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-1 space-y-6">
+                            <div>
+                                <h2 className="text-2xl font-bold text-indigo-300 mb-4">Actions</h2>
+                                <div className="space-y-3">
+                                    <button onClick={handleDownloadLogClick} disabled={filteredStudents.length === 0} className="w-full px-6 py-3 rounded-lg font-semibold text-white bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
+                                        Download Daily Log (CSV)
+                                    </button>
+                                    <button onClick={handleDownloadSummaryClick} disabled={filteredStudents.length === 0} className="w-full px-6 py-3 rounded-lg font-semibold text-white bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
+                                        Download Monthly Summary (CSV)
+                                    </button>
+                                     <button onClick={handleDownloadDetailsClick} disabled={filteredStudents.length === 0} className="w-full px-6 py-3 rounded-lg font-semibold text-white bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
+                                        Download Student Details (CSV)
+                                    </button>
+                                </div>
+                            </div>
+                            <div>
+                                <h2 className="text-2xl font-bold text-indigo-300 mb-4">Instructions</h2>
+                                <div className="bg-slate-900/50 p-4 rounded-lg text-gray-400 text-sm space-y-2">
+                                    <p><span className="font-bold text-gray-300">View Profile:</span> Click on any student row to view their detailed profile and full attendance history.</p>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    
-                    <div className="lg:col-span-2">
-                         <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-2xl font-bold text-indigo-300">Students in {currentUser.department} ({filteredStudents.length})</h2>
-                            <div className="flex gap-2">
-                                <select value={yearFilter} onChange={e => setYearFilter(e.target.value)} className="bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500 transition">
-                                    <option value="ALL">All Years</option>
-                                    {Object.values(Year).map(y => <option key={y} value={y}>{y}</option>)}
-                                </select>
+                        
+                        <div className="lg:col-span-2">
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-2xl font-bold text-indigo-300">Students in {currentUser.department} ({filteredStudents.length})</h2>
+                                <div className="flex gap-2">
+                                    <select value={yearFilter} onChange={e => setYearFilter(e.target.value)} className="bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500 transition">
+                                        <option value="ALL">All Years</option>
+                                        {Object.values(Year).map(y => <option key={y} value={y}>{y}</option>)}
+                                    </select>
+                                    <select value={sectionFilter} onChange={e => setSectionFilter(e.target.value)} className="bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500 transition">
+                                        <option value="ALL">All Sections</option>
+                                        <option value="1">Section 1</option>
+                                        <option value="2">Section 2</option>
+                                        <option value="3">Section 3</option>
+                                        <option value="4">Section 4</option>
+                                    </select>
+                                </div>
                             </div>
-                         </div>
-                         <div className="bg-slate-900/50 rounded-lg max-h-[60vh] overflow-y-auto">
-                            {filteredStudents.length === 0 ? (
-                                <p className="text-center text-gray-500 p-8">No students found in this department.</p>
-                            ) : (
-                                <div className="divide-y divide-slate-800">
-                                {filteredStudents.map(student => (
-                                    <div key={student.rollNumber} onClick={() => setSelectedStudent(student)} className={`p-4 flex justify-between items-center hover:bg-slate-800/60 transition-colors cursor-pointer ${student.isBlocked ? 'opacity-50' : ''}`}>
-                                        <div className="flex items-center gap-4">
-                                            {student.photoBase64 ? (
-                                                <img src={student.photoBase64} alt={student.name} className="w-12 h-12 rounded-full object-cover border-2 border-slate-600" />
-                                            ) : (
-                                                <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-indigo-300 font-bold text-lg">
-                                                    {student.name.charAt(0)}
+                            <div className="bg-slate-900/50 rounded-lg max-h-[60vh] overflow-y-auto">
+                                {filteredStudents.length === 0 ? (
+                                    <p className="text-center text-gray-500 p-8">No students found matching your filters.</p>
+                                ) : (
+                                    <div className="divide-y divide-slate-800">
+                                    {filteredStudents.map(student => (
+                                        <div key={student.rollNumber} onClick={() => setSelectedStudent(student)} className={`p-4 flex justify-between items-center hover:bg-slate-800/60 transition-colors cursor-pointer ${student.isBlocked ? 'opacity-50' : ''}`}>
+                                            <div className="flex items-center gap-4">
+                                                {student.photoBase64 ? (
+                                                    <img src={student.photoBase64} alt={student.name} className="w-12 h-12 rounded-full object-cover border-2 border-slate-600" />
+                                                ) : (
+                                                    <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-indigo-300 font-bold text-lg">
+                                                        {student.name.charAt(0)}
+                                                    </div>
+                                                )}
+                                                <div>
+                                                    <p className="font-bold text-white">{student.name} {student.isBlocked && <span className="text-xs font-bold text-red-400">(Blocked)</span>}</p>
+                                                    <p className="text-sm text-gray-400">{student.rollNumber}</p>
+                                                    <p className="text-xs text-indigo-300 bg-indigo-900/50 inline-block px-2 py-0.5 rounded mt-1">{student.department} - {student.year} - Sec {student.section}</p>
                                                 </div>
-                                            )}
-                                            <div>
-                                                <p className="font-bold text-white">{student.name} {student.isBlocked && <span className="text-xs font-bold text-red-400">(Blocked)</span>}</p>
-                                                <p className="text-sm text-gray-400">{student.rollNumber}</p>
-                                                <p className="text-xs text-indigo-300 bg-indigo-900/50 inline-block px-2 py-0.5 rounded mt-1">{student.department} - {student.year}</p>
                                             </div>
                                         </div>
+                                    ))}
                                     </div>
-                                ))}
-                                </div>
-                            )}
-                         </div>
+                                )}
+                            </div>
+                        </div>
                     </div>
-                </div>
+                )}
+
+                {activeTab === 'marks' && (
+                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-2">
+                            <MarksEntry 
+                                currentUser={currentUser}
+                                studentDirectory={studentDirectory}
+                                departments={[currentUser.department]}
+                                onSaveMarks={onUpdateMarks}
+                            />
+                        </div>
+                         <div className="lg:col-span-1">
+                            <h2 className="text-2xl font-bold text-indigo-300 mb-4">Instructions</h2>
+                            <div className="bg-slate-900/50 p-4 rounded-lg text-gray-400 text-sm space-y-2">
+                                <p>1. <span className="font-bold text-gray-300">Select Criteria:</span> Choose the year, subject, and mid-term exam.</p>
+                                <p>2. <span className="font-bold text-gray-300">Load Students:</span> Click the button to display the student list for your department.</p>
+                                <p>3. <span className="font-bold text-gray-300">Enter Marks:</span> Input the marks for each student.</p>
+                                <p>4. <span className="font-bold text-gray-300">Save Changes:</span> Click 'Save All Marks' to submit.</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </main>
         </div>
     );

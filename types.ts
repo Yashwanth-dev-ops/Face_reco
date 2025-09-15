@@ -1,5 +1,3 @@
-
-
 export enum Emotion {
     Happy = 'Happy',
     Sad = 'Sad',
@@ -55,6 +53,12 @@ export interface BoundingBox {
     height: number;
 }
 
+export interface MidTermMarks {
+    subject: string;
+    mid1: number | null;
+    mid2: number | null;
+}
+
 export interface StudentInfo {
     name: string;
     rollNumber: string; // Will be used as username
@@ -63,6 +67,9 @@ export interface StudentInfo {
     password: string; // In a real app, this would be a hash
     isBlocked: boolean;
     photoBase64?: string;
+    marks?: MidTermMarks[];
+    section: string;
+    phoneNumber: string;
 }
 
 export interface AdminInfo {
@@ -74,6 +81,8 @@ export interface AdminInfo {
     password: string; // In a real app, this would be a hash
     isBlocked?: boolean;
     photoBase64?: string;
+    section?: string; // For incharges
+    year?: Year; // For incharges
 }
 
 export interface AttendanceRecord {

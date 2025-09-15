@@ -1,10 +1,8 @@
-
-
-
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { detectFacesAndHands } from './services/geminiService';
 import { exportAttendanceToCSV } from './services/csvExportService';
 import * as apiService from './services/apiService';
+import { MarkUpdate } from './services/apiService';
 import { DetectionResult, FaceResult, BoundingBox, StudentInfo, AdminInfo, AttendanceRecord, Emotion, Year, Designation } from './types';
 import { CameraIcon } from './components/CameraIcon';
 import { DetectionOverlay } from './components/DetectionOverlay';
@@ -21,6 +19,13 @@ import { StudentDashboard } from './components/StudentDashboard';
 
 type View = 'LOGIN' | 'STUDENT_REGISTRATION' | 'ADMIN_REGISTRATION' | 'ADMIN_DASHBOARD' | 'TEACHER_DASHBOARD' | 'STUDENT_DASHBOARD' | 'ANALYZER';
 type CurrentUser = (AdminInfo & { userType: 'ADMIN' }) | (StudentInfo & { userType: 'STUDENT' });
+type TrackedFace = {
+    boundingBox: BoundingBox;
+    velocity: { x: number; y: number };
+    lastSeen: number;
+    geminiId: string;
+    consecutiveMisses: number;
+};
 
 const calculateIoU = (boxA: BoundingBox, boxB: BoundingBox): number => {
     const xA = Math.max(boxA.x, boxB.x);
@@ -62,7 +67,7 @@ const App: React.FC = () => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const isProcessing = useRef(false);
-    const trackedFacesRef = useRef<Map<number, { boundingBox: BoundingBox; lastSeen: number; geminiId: string }>>(new Map());
+    const trackedFacesRef = useRef<Map<number, TrackedFace>>(new Map());
     const nextFaceIdRef = useRef(1);
     
     // Constants
@@ -136,9 +141,21 @@ const App: React.FC = () => {
         trackedFacesRef.current.clear();
 
         try {
-             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                setError({ title: "Unsupported Browser", message: "Your browser does not support getUserMedia." });
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                setError({ title: "Unsupported Browser", message: "Your browser does not support camera access." });
                 return;
+            }
+
+            // Check permissions API if available
+            if (navigator.permissions && navigator.permissions.query) {
+                const permission = await navigator.permissions.query({ name: 'camera' as PermissionName });
+                if (permission.state === 'denied') {
+                    setError({
+                        title: "Camera Permission Denied",
+                        message: "Camera access is blocked. Please go to your browser settings to allow camera access for this site."
+                    });
+                    return;
+                }
             }
 
             const mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -150,17 +167,17 @@ const App: React.FC = () => {
         } catch (err) {
             console.error("Error accessing camera:", err);
             let title = "Camera Error";
-            let message = "An unexpected error occurred.";
+            let message = "An unexpected error occurred while trying to access the camera.";
             if (err instanceof DOMException) {
                 if (err.name === 'NotAllowedError') {
                     title = "Camera Permission Denied";
-                    message = "Please allow camera access in your browser settings.";
+                    message = "You denied camera access. Please allow camera access in your browser settings to continue.";
                 } else if (err.name === 'NotFoundError') {
                     title = "No Camera Found";
-                    message = "Please ensure a camera is connected.";
+                    message = "No camera was found on your device. Please ensure a camera is connected.";
                 } else if (err.name === 'NotReadableError') {
                     title = "Camera in Use";
-                    message = "Your camera might be in use by another application.";
+                    message = "Your camera might be in use by another application. Please close other apps and try again.";
                 }
             }
             setError({ title, message });
@@ -243,6 +260,11 @@ const App: React.FC = () => {
         const newAttendance = await apiService.logAttendance(persistentId, emotion);
         setAttendance(newAttendance);
     };
+
+    const handleUpdateMarks = async (updates: MarkUpdate[]) => {
+        const updatedStudents = await apiService.updateBulkStudentMarks(updates);
+        setStudentDirectory(updatedStudents);
+    };
     
     const captureAndAnalyze = useCallback(async () => {
         if (isProcessing.current || !videoRef.current || !canvasRef.current || !stream) return;
@@ -267,47 +289,113 @@ const App: React.FC = () => {
             const result = await detectFacesAndHands(base64Data);
             const newDetections = result.faces;
             const currentTime = Date.now();
-            const matchedPairs: { trackId: number; detection: FaceResult; detectionIndex: number }[] = [];
-            const usedDetectionIndices = new Set<number>();
-            const IOU_THRESHOLD = 0.4;
+            
+            // --- New Tracking Logic ---
+            const IOU_THRESHOLD = 0.3;
+            const MAX_CONSECUTIVE_MISSES = 5;
+            const VELOCITY_UPDATE_ALPHA = 0.5;
 
-            for (const [trackId, trackData] of trackedFacesRef.current.entries()) {
-                let bestMatchIndex = -1;
-                let bestIoU = 0;
-                newDetections.forEach((detection, index) => {
-                    if (usedDetectionIndices.has(index)) return;
-                    const iou = calculateIoU(trackData.boundingBox, detection.boundingBox);
-                    if (iou > bestIoU && iou > IOU_THRESHOLD) {
-                        bestIoU = iou;
-                        bestMatchIndex = index;
+            // 1. Predict next location for existing tracks
+            const predictions = new Map<number, BoundingBox>();
+            trackedFacesRef.current.forEach((trackData, trackId) => {
+                const { boundingBox: box, velocity } = trackData;
+                const centerX = box.x + box.width / 2;
+                const centerY = box.y + box.height / 2;
+                const predictedCenterX = centerX + velocity.x;
+                const predictedCenterY = centerY + velocity.y;
+                predictions.set(trackId, {
+                    x: predictedCenterX - box.width / 2,
+                    y: predictedCenterY - box.height / 2,
+                    width: box.width,
+                    height: box.height,
+                });
+            });
+
+            // 2. Create cost matrix and find best matches (greedy approach)
+            const potentialMatches: { trackId: number; detectionIndex: number; iou: number }[] = [];
+            predictions.forEach((predictedBox, trackId) => {
+                newDetections.forEach((detection, detectionIndex) => {
+                    const iou = calculateIoU(predictedBox, detection.boundingBox);
+                    if (iou > IOU_THRESHOLD) {
+                        potentialMatches.push({ trackId, detectionIndex, iou });
                     }
                 });
-                if (bestMatchIndex !== -1) {
-                    matchedPairs.push({ trackId, detection: newDetections[bestMatchIndex], detectionIndex: bestMatchIndex });
-                    usedDetectionIndices.add(bestMatchIndex);
+            });
+            potentialMatches.sort((a, b) => b.iou - a.iou);
+
+            const finalMatches = new Map<number, number>(); // trackId -> detectionIndex
+            const matchedDetections = new Set<number>();
+            for (const match of potentialMatches) {
+                if (!finalMatches.has(match.trackId) && !matchedDetections.has(match.detectionIndex)) {
+                    finalMatches.set(match.trackId, match.detectionIndex);
+                    matchedDetections.add(match.detectionIndex);
                 }
             }
-
-            const newTrackedFaces = new Map<number, { boundingBox: BoundingBox; lastSeen: number; geminiId: string }>();
             
-            for (const { trackId, detection } of matchedPairs) {
-                newTrackedFaces.set(trackId, { boundingBox: detection.boundingBox, lastSeen: currentTime, geminiId: detection.personId });
-                detection.persistentId = trackId;
-            }
+            // 3. Update state: update matched, handle misses, create new tracks
+            const newTrackedFaces = new Map<number, TrackedFace>();
 
-            const maxId = Array.from(trackedFacesRef.current.keys()).reduce((max, id) => Math.max(max, id), 0);
-            nextFaceIdRef.current = maxId + 1;
+            // Update matched tracks
+            finalMatches.forEach((detectionIndex, trackId) => {
+                const oldTrack = trackedFacesRef.current.get(trackId)!;
+                const newDetection = newDetections[detectionIndex];
+                const oldBox = oldTrack.boundingBox;
+                const oldCenterX = oldBox.x + oldBox.width / 2;
+                const oldCenterY = oldBox.y + oldBox.height / 2;
+                const newBox = newDetection.boundingBox;
+                const newCenterX = newBox.x + newBox.width / 2;
+                const newCenterY = newBox.y + newBox.height / 2;
+                const dx = newCenterX - oldCenterX;
+                const dy = newCenterY - oldCenterY;
+                const newVx = VELOCITY_UPDATE_ALPHA * dx + (1 - VELOCITY_UPDATE_ALPHA) * oldTrack.velocity.x;
+                const newVy = VELOCITY_UPDATE_ALPHA * dy + (1 - VELOCITY_UPDATE_ALPHA) * oldTrack.velocity.y;
+
+                newTrackedFaces.set(trackId, {
+                    boundingBox: newBox,
+                    velocity: { x: newVx, y: newVy },
+                    lastSeen: currentTime,
+                    geminiId: newDetection.personId,
+                    consecutiveMisses: 0,
+                });
+                newDetection.persistentId = trackId;
+            });
+            
+            // Handle unmatched tracks (occlusions)
+            trackedFacesRef.current.forEach((trackData, trackId) => {
+                if (!finalMatches.has(trackId)) {
+                    const misses = trackData.consecutiveMisses + 1;
+                    if (misses < MAX_CONSECUTIVE_MISSES) {
+                        const predictedBox = predictions.get(trackId)!;
+                        newTrackedFaces.set(trackId, {
+                            ...trackData,
+                            boundingBox: predictedBox, // Update to predicted position
+                            consecutiveMisses: misses,
+                        });
+                    } // else: track is dropped
+                }
+            });
+
+            // Handle new detections
+            const maxId = Array.from(newTrackedFaces.keys()).reduce((max, id) => Math.max(max, id), 0);
+            nextFaceIdRef.current = Math.max(maxId + 1, nextFaceIdRef.current);
 
             newDetections.forEach((detection, index) => {
-                if (!usedDetectionIndices.has(index)) {
+                if (!matchedDetections.has(index)) {
                     const newId = nextFaceIdRef.current++;
-                    newTrackedFaces.set(newId, { boundingBox: detection.boundingBox, lastSeen: currentTime, geminiId: detection.personId });
+                    newTrackedFaces.set(newId, {
+                        boundingBox: detection.boundingBox,
+                        velocity: { x: 0, y: 0 },
+                        lastSeen: currentTime,
+                        geminiId: detection.personId,
+                        consecutiveMisses: 0,
+                    });
                     detection.persistentId = newId;
                 }
             });
             
             trackedFacesRef.current = newTrackedFaces;
-            
+            // --- End of New Tracking Logic ---
+
             newDetections.forEach(face => {
                 if (face.persistentId) {
                     const rollNumber = faceLinks.get(face.persistentId);
@@ -407,6 +495,7 @@ const App: React.FC = () => {
                                 onToggleBlockAdmin={handleToggleBlockAdmin}
                                 onLogout={handleLogout}
                                 onDownload={handleDownload}
+                                onUpdateMarks={handleUpdateMarks}
                             />;
                 }
                 handleLogout();
@@ -416,10 +505,12 @@ const App: React.FC = () => {
                     return <TeacherDashboard
                         currentUser={currentUser}
                         studentDirectory={studentDirectory}
+                        adminDirectory={adminDirectory}
                         attendance={attendance}
                         faceLinks={faceLinks}
                         onLogout={handleLogout}
                         onDownload={handleDownload}
+                        onUpdateMarks={handleUpdateMarks}
                     />;
                 }
                 handleLogout();

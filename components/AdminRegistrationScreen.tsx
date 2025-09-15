@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AdminInfo, Designation } from '../types';
+import { AdminInfo, Designation, Year } from '../types';
 import { CameraCapture } from './CameraCapture';
 
 interface AdminRegistrationScreenProps {
@@ -19,6 +19,8 @@ export const AdminRegistrationScreen: React.FC<AdminRegistrationScreenProps> = (
     const [loading, setLoading] = useState(false);
     const [isDepartmentDisabled, setIsDepartmentDisabled] = useState(false);
     const [photoBase64, setPhotoBase64] = useState<string | null>(null);
+    const [section, setSection] = useState('1');
+    const [year, setYear] = useState<Year>(Year.First);
     
     useEffect(() => {
         const isPrincipalOrVP = designation === Designation.Principal || designation === Designation.VicePrincipal;
@@ -30,7 +32,7 @@ export const AdminRegistrationScreen: React.FC<AdminRegistrationScreenProps> = (
                 setDepartment('');
             }
         }
-    }, [designation]);
+    }, [designation, department]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -48,7 +50,9 @@ export const AdminRegistrationScreen: React.FC<AdminRegistrationScreenProps> = (
                 department: department.trim(), 
                 designation, 
                 password,
-                photoBase64 
+                photoBase64,
+                section: designation === Designation.Incharge ? section : undefined,
+                year: designation === Designation.Incharge ? year : undefined,
             };
             await onRegister(newAdmin);
         } catch (err) {
@@ -62,6 +66,12 @@ export const AdminRegistrationScreen: React.FC<AdminRegistrationScreenProps> = (
         }
     };
 
+    const handleDesignationChange = (newDesignation: Designation) => {
+        setDesignation(newDesignation);
+        setSection('1');
+        setYear(Year.First);
+    };
+
     return (
         <div className="w-full max-w-md mx-auto animate-fade-in">
             <div className="text-center mb-8">
@@ -73,7 +83,17 @@ export const AdminRegistrationScreen: React.FC<AdminRegistrationScreenProps> = (
                     <InputField label="Full Name" type="text" value={name} onChange={setName} required />
                     <InputField label="ID Number (Username)" type="text" value={idNumber} onChange={setIdNumber} required />
                     <InputField label="Phone Number" type="tel" value={phoneNumber} onChange={setPhoneNumber} required />
-                    <SelectField label="Designation" value={designation} onChange={setDesignation} options={Object.values(Designation)} required />
+                    <SelectField label="Designation" value={designation} onChange={handleDesignationChange} options={Object.values(Designation)} required />
+                    {designation === Designation.Incharge && (
+                        <div className="flex gap-4">
+                            <div className="flex-1">
+                                <SelectField label="Year Resp." value={year} onChange={setYear} options={Object.values(Year)} required />
+                            </div>
+                             <div className="flex-1">
+                                <SelectField label="Section Resp." value={section} onChange={setSection} options={['1', '2', '3', '4', 'All Sections']} required />
+                            </div>
+                        </div>
+                    )}
                     <InputField label="Department" type="text" value={department} onChange={setDepartment} list="department-list" required disabled={isDepartmentDisabled} />
                     <datalist id="department-list">
                         {departments.map(opt => <option key={opt} value={opt} />)}
