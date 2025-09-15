@@ -214,20 +214,23 @@ const App: React.FC = () => {
     };
     
     const handleDeleteStudent = async (rollNumber: string) => {
-        const { updatedStudents, updatedFaceLinks, updatedAttendance } = await apiService.deleteStudent(rollNumber);
+        if (currentUser?.userType !== 'ADMIN') return;
+        const { updatedStudents, updatedFaceLinks, updatedAttendance } = await apiService.deleteStudent(rollNumber, currentUser.idNumber);
         setStudentDirectory(updatedStudents);
         setFaceLinks(updatedFaceLinks);
         setAttendance(updatedAttendance);
     };
     
     const handleToggleBlockStudent = async (rollNumber: string) => {
-        const updatedStudent = await apiService.toggleStudentBlock(rollNumber);
+        if (currentUser?.userType !== 'ADMIN') return;
+        const updatedStudent = await apiService.toggleStudentBlock(rollNumber, currentUser.idNumber);
         setStudentDirectory(prev => new Map(prev).set(rollNumber, updatedStudent));
     };
     
     const handleDeleteAdmin = async (idNumber: string) => {
+        if (currentUser?.userType !== 'ADMIN') return;
         try {
-            const updatedAdmins = await apiService.deleteAdmin(idNumber);
+            const updatedAdmins = await apiService.deleteAdmin(idNumber, currentUser.idNumber);
             setAdminDirectory(updatedAdmins);
         } catch (err) {
             console.error(err);
@@ -237,8 +240,9 @@ const App: React.FC = () => {
     };
 
     const handleToggleBlockAdmin = async (idNumber: string) => {
+        if (currentUser?.userType !== 'ADMIN') return;
         try {
-            const updatedAdmin = await apiService.toggleAdminBlock(idNumber);
+            const updatedAdmin = await apiService.toggleAdminBlock(idNumber, currentUser.idNumber);
             setAdminDirectory(prev => new Map(prev).set(idNumber, updatedAdmin));
         } catch (err) {
             console.error(err);
@@ -262,8 +266,15 @@ const App: React.FC = () => {
     };
 
     const handleUpdateMarks = async (updates: MarkUpdate[]) => {
-        const updatedStudents = await apiService.updateBulkStudentMarks(updates);
+        if (currentUser?.userType !== 'ADMIN') return;
+        const updatedStudents = await apiService.updateBulkStudentMarks(updates, currentUser.idNumber);
         setStudentDirectory(updatedStudents);
+    };
+
+    const handleLogAction = (action: string, details: string) => {
+        if (currentUser?.userType === 'ADMIN') {
+            apiService.logGenericAdminAction(currentUser.idNumber, action, details);
+        }
     };
     
     const captureAndAnalyze = useCallback(async () => {
@@ -496,6 +507,7 @@ const App: React.FC = () => {
                                 onLogout={handleLogout}
                                 onDownload={handleDownload}
                                 onUpdateMarks={handleUpdateMarks}
+                                onLogAction={handleLogAction}
                             />;
                 }
                 handleLogout();

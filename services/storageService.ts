@@ -1,11 +1,33 @@
-
 import { StudentInfo, AdminInfo, AttendanceRecord } from '../types';
+import { LogEntry } from './logService';
 
 const STUDENT_DIRECTORY_KEY = 'vision_ai_student_directory';
 const ADMIN_DIRECTORY_KEY = 'vision_ai_admin_directory';
 const FACE_LINKS_KEY = 'vision_ai_face_links';
 const ATTENDANCE_KEY = 'vision_ai_attendance';
 const DEPARTMENTS_KEY = 'vision_ai_departments';
+const ACTION_LOGS_KEY = 'vision_ai_action_logs';
+
+
+// --- Action Logs ---
+export function saveActionLogs(logs: LogEntry[]): void {
+    try {
+        localStorage.setItem(ACTION_LOGS_KEY, JSON.stringify(logs));
+    } catch (error) {
+        console.error("Failed to save action logs:", error);
+    }
+}
+
+export function loadActionLogs(): LogEntry[] {
+    try {
+        const data = localStorage.getItem(ACTION_LOGS_KEY);
+        return data ? JSON.parse(data) : [];
+    } catch (error) {
+        console.error("Failed to load action logs:", error);
+        return [];
+    }
+}
+
 
 // --- Student Directory ---
 

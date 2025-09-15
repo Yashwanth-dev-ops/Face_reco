@@ -128,34 +128,37 @@ export function exportMonthlySummaryToCSV(
     }
 }
 
-
-export function exportMarksReportToCSV(
-    students: StudentInfo[],
-): void {
-    const headers = ['Roll Number', 'Name', 'Department', 'Year', 'Subject', 'Mid-1 Marks', 'Mid-2 Marks'];
-    
+export function exportMidTermMarksReportToCSV(students: StudentInfo[]): void {
+    const headers = ['Roll Number', 'Name', 'Department', 'Year', 'Section', 'Subject', 'Mid-1 Marks', 'Mid-2 Marks', 'Average'];
     const rows: string[] = [];
 
     students.forEach(student => {
         if (student.marks && student.marks.length > 0) {
             student.marks.forEach(mark => {
+                let average: string | number = 'N/A';
+                if (mark.mid1 !== null && mark.mid2 !== null) {
+                    average = ((mark.mid1 + mark.mid2) / 2).toFixed(2);
+                }
                 rows.push([
                     `"${student.rollNumber}"`,
                     `"${student.name}"`,
                     `"${student.department}"`,
                     `"${student.year}"`,
+                    `"${student.section}"`,
                     `"${mark.subject}"`,
                     `"${mark.mid1 ?? 'N/A'}"`,
-                    `"${mark.mid2 ?? 'N/A'}"`
+                    `"${mark.mid2 ?? 'N/A'}"`,
+                    `"${average}"`
                 ].join(','));
             });
         } else {
-            // Include students even if they have no marks entered
-            rows.push([
+             rows.push([
                 `"${student.rollNumber}"`,
                 `"${student.name}"`,
                 `"${student.department}"`,
                 `"${student.year}"`,
+                `"${student.section}"`,
+                `"N/A"`,
                 `"N/A"`,
                 `"N/A"`,
                 `"N/A"`
@@ -169,7 +172,7 @@ export function exportMarksReportToCSV(
     if (link.download !== undefined) {
         const url = URL.createObjectURL(blob);
         link.setAttribute('href', url);
-        link.setAttribute('download', 'student_marks_report.csv');
+        link.setAttribute('download', 'mid_term_marks_report.csv');
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
         link.click();

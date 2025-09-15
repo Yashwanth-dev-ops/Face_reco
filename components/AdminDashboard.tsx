@@ -1,11 +1,11 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { StudentInfo, AdminInfo, Designation, Year, AttendanceRecord } from '../types';
 import { emotionUIConfig } from './uiConfig';
-import { exportMonthlySummaryToCSV, exportMarksReportToCSV, exportStudentDetailsReportToCSV } from '../services/csvExportService';
-import { MarksEntry } from './MarksEntry';
+import { exportMonthlySummaryToCSV, exportStudentDetailsReportToCSV } from '../services/csvExportService';
+import { MidTermAssessment } from './MidTermAssessment';
 import { MarkUpdate } from '../services/apiService';
 import { DownloadReportModal } from './DownloadReportModal';
+import { LogPanel } from './LogPanel';
 
 interface AdminDashboardProps {
     currentUser: AdminInfo;
@@ -21,18 +21,74 @@ interface AdminDashboardProps {
     onLogout: () => void;
     onDownload: (filteredAttendance: AttendanceRecord[]) => void;
     onUpdateMarks: (updates: MarkUpdate[]) => Promise<void>;
+    onLogAction: (action: string, details: string) => void;
 }
 
 const TrashIcon: React.FC<{className?: string}> = ({className}) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" />
     </svg>
 );
 
 const BlockIcon: React.FC<{className?: string}> = ({className}) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 20 20" fill="currentColor">
+      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
     </svg>
+);
+
+// Icons for Action Cards
+const DailyLogIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l2 2 4-4" />
+    </svg>
+);
+
+const MonthlySummaryIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+    </svg>
+);
+
+const StudentDetailsIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.653-.124-1.282-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.653.124-1.282.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+    </svg>
+);
+
+const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+    </svg>
+);
+
+const ActionCard: React.FC<{
+    icon: React.ReactNode;
+    title: string;
+    description: string;
+    onClick: () => void;
+    disabled: boolean;
+    colorClass: { bg: string };
+}> = ({ icon, title, description, onClick, disabled, colorClass }) => (
+    <button
+        onClick={onClick}
+        disabled={disabled}
+        className={`
+            bg-slate-900/50 rounded-lg p-4 flex items-center gap-4 w-full text-left border border-slate-700/80 transition-all duration-200
+            ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-800/60 hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-800 focus:ring-indigo-500'}
+        `}
+    >
+        <div className={`flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center ${colorClass.bg}`}>
+            {icon}
+        </div>
+        <div className="flex-grow">
+            <h3 className="font-bold text-white">{title}</h3>
+            <p className="text-sm text-gray-400">{description}</p>
+        </div>
+        <div className="flex-shrink-0 text-gray-400 group-hover:text-white transition-colors">
+            <DownloadIcon className="w-6 h-6" />
+        </div>
+    </button>
 );
 
 
@@ -86,7 +142,7 @@ const StudentProfileModal: React.FC<{
                         onClick={onClose}
                         className="p-2 rounded-full text-gray-400 hover:bg-slate-700 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-slate-500"
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24" stroke="currentColor">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
                     </button>
@@ -142,7 +198,7 @@ const StudentProfileModal: React.FC<{
 };
 
 const StudentManagementPanel: React.FC<Omit<AdminDashboardProps, 'onDeleteAdmin' | 'onToggleBlockAdmin' | 'onUpdateMarks'>> = (props) => {
-    const { currentUser, studentDirectory, adminDirectory, departments, attendance, faceLinks, onDeleteStudent, onToggleBlockStudent, onDownload } = props;
+    const { currentUser, studentDirectory, adminDirectory, departments, attendance, faceLinks, onDeleteStudent, onToggleBlockStudent, onDownload, onLogAction } = props;
     const [selectedStudent, setSelectedStudent] = useState<StudentInfo | null>(null);
     const [departmentFilter, setDepartmentFilter] = useState<string>('ALL');
     const [yearFilter, setYearFilter] = useState<string>('ALL');
@@ -175,13 +231,22 @@ const StudentManagementPanel: React.FC<Omit<AdminDashboardProps, 'onDeleteAdmin'
         }).sort((a, b) => a.name.localeCompare(b.name));
     }, [studentDirectory, departmentFilter, yearFilter, sectionFilter]);
 
-    // Direct download handlers for specific-section incharges
+    const createDownloadLogDetails = (reportTitle: string, students: StudentInfo[], filters: {dept: string, year: string, sec: string}) => {
+        const studentCount = students.length;
+        let logDetails = `${reportTitle} for ${studentCount} student(s) with filters (Dept: ${filters.dept}, Year: ${filters.year}, Sec: ${filters.sec}).`;
+
+        if (studentCount > 0 && studentCount <= 10) {
+            const rollNumbers = students.map(s => s.rollNumber).join(', ');
+            logDetails += ` Roll Numbers: ${rollNumbers}`;
+        }
+        return logDetails;
+    };
+
     const downloadDailyLogForFiltered = () => {
+        const logDetails = createDownloadLogDetails('Daily Attendance Log', filteredStudents, {dept: departmentFilter, year: yearFilter, sec: sectionFilter});
+        onLogAction('Download Report', logDetails);
         const filteredRollNumbers = new Set(filteredStudents.map(s => s.rollNumber));
         const persistentIdsForReport = new Set<number>();
-        // FIX: The callback parameters for Map.forEach were swapped, causing a type mismatch.
-        // For `faceLinks: Map<number, string>`, the callback is `(value: string, key: number)`.
-        // The parameter order has been corrected to `(roll, pid)` to match this signature.
         faceLinks.forEach((roll, pid) => {
             if (filteredRollNumbers.has(roll)) {
                 persistentIdsForReport.add(pid);
@@ -190,15 +255,25 @@ const StudentManagementPanel: React.FC<Omit<AdminDashboardProps, 'onDeleteAdmin'
         const filteredAttendance = attendance.filter(record => persistentIdsForReport.has(record.persistentId));
         onDownload(filteredAttendance);
     };
-    const downloadMonthlySummaryForFiltered = () => exportMonthlySummaryToCSV(filteredStudents, attendance, faceLinks);
-    const downloadStudentDetailsForFiltered = () => exportStudentDetailsReportToCSV(filteredStudents, Array.from(adminDirectory.values()));
+    const downloadMonthlySummaryForFiltered = () => {
+        const logDetails = createDownloadLogDetails('Monthly Summary', filteredStudents, {dept: departmentFilter, year: yearFilter, sec: sectionFilter});
+        onLogAction('Download Report', logDetails);
+        exportMonthlySummaryToCSV(filteredStudents, attendance, faceLinks);
+    };
+    const downloadStudentDetailsForFiltered = () => {
+        const logDetails = createDownloadLogDetails('Student Details Report', filteredStudents, {dept: departmentFilter, year: yearFilter, sec: sectionFilter});
+        onLogAction('Download Report', logDetails);
+        exportStudentDetailsReportToCSV(filteredStudents, Array.from(adminDirectory.values()));
+    };
 
 
     const handleDownloadRequest = (type: 'daily' | 'monthly' | 'details') => {
-        const isPrivilegedUser = [Designation.Principal, Designation.VicePrincipal, Designation.HOD].includes(currentUser.designation);
-        const isInchargeForAllSections = currentUser.designation === Designation.Incharge && (!currentUser.section || currentUser.section === 'All Sections');
+        const isPrivilegedUser = [Designation.Principal, Designation.VicePrincipal].includes(currentUser.designation);
+        const isHODorInchargeAll = [Designation.HOD].includes(currentUser.designation) || 
+                               (currentUser.designation === Designation.Incharge && (!currentUser.section || currentUser.section === 'All Sections'));
 
-        if (isPrivilegedUser || isInchargeForAllSections) {
+
+        if (isPrivilegedUser || isHODorInchargeAll) {
             setReportTypeToDownload(type);
             setIsDownloadModalOpen(true);
         } else {
@@ -209,17 +284,28 @@ const StudentManagementPanel: React.FC<Omit<AdminDashboardProps, 'onDeleteAdmin'
         }
     };
     
-    const handleModalDownloadSubmit = (selectedYear: Year, selectedSection: string) => {
-        const departmentToFilter = (currentUser.designation === Designation.HOD || currentUser.designation === Designation.Incharge)
-            ? currentUser.department
-            : 'ALL';
+    const getReportTitle = () => {
+        switch(reportTypeToDownload) {
+            case 'daily': return 'Daily Attendance Log';
+            case 'monthly': return 'Monthly Summary';
+            case 'details': return 'Student Details Report';
+            default: return 'Report';
+        }
+    };
 
+    const handleModalDownloadSubmit = (selectedDepartment: string, selectedYear: Year, selectedSection: string) => {
         const studentsForReport = Array.from(studentDirectory.values()).filter(student => {
-            const departmentMatch = departmentToFilter === 'ALL' || student.department === departmentToFilter;
+            const departmentMatch = selectedDepartment === 'ALL' || student.department === selectedDepartment;
             const yearMatch = student.year === selectedYear;
             const sectionMatch = selectedSection === 'ALL' || student.section === selectedSection;
             return departmentMatch && yearMatch && sectionMatch;
         });
+        
+        if (reportTypeToDownload) {
+            const reportTitle = getReportTitle();
+            const logDetails = createDownloadLogDetails(reportTitle, studentsForReport, {dept: selectedDepartment, year: selectedYear, sec: selectedSection});
+            onLogAction('Download Report', logDetails);
+        }
 
         if (reportTypeToDownload === 'daily') {
             const rollNumbers = new Set(studentsForReport.map(s => s.rollNumber));
@@ -237,13 +323,9 @@ const StudentManagementPanel: React.FC<Omit<AdminDashboardProps, 'onDeleteAdmin'
         setReportTypeToDownload(null);
     };
 
-    const getReportTitle = () => {
-        switch(reportTypeToDownload) {
-            case 'daily': return 'Download Daily Attendance Log';
-            case 'monthly': return 'Download Monthly Summary';
-            case 'details': return 'Download Student Details';
-            default: return 'Download Report';
-        }
+    const handleViewStudent = (student: StudentInfo) => {
+        onLogAction('View Student Profile', `Viewed profile for student: ${student.name} (Roll Number: ${student.rollNumber})`);
+        setSelectedStudent(student);
     };
 
 
@@ -262,6 +344,8 @@ const StudentManagementPanel: React.FC<Omit<AdminDashboardProps, 'onDeleteAdmin'
                     onClose={() => setIsDownloadModalOpen(false)}
                     onSubmit={handleModalDownloadSubmit}
                     title={getReportTitle()}
+                    departments={departments}
+                    currentUser={currentUser}
                 />
             )}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -269,15 +353,30 @@ const StudentManagementPanel: React.FC<Omit<AdminDashboardProps, 'onDeleteAdmin'
                     <div>
                         <h2 className="text-2xl font-bold text-indigo-300 mb-4">Actions</h2>
                          <div className="space-y-3">
-                            <button onClick={() => handleDownloadRequest('daily')} disabled={studentDirectory.size === 0} className="w-full px-6 py-3 rounded-full font-semibold text-white bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
-                                Download Daily Log (CSV)
-                            </button>
-                             <button onClick={() => handleDownloadRequest('monthly')} disabled={studentDirectory.size === 0} className="w-full px-6 py-3 rounded-full font-semibold text-white bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
-                                Download Monthly Summary (CSV)
-                            </button>
-                            <button onClick={() => handleDownloadRequest('details')} disabled={studentDirectory.size === 0} className="w-full px-6 py-3 rounded-full font-semibold text-white bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
-                                Download Student Details (CSV)
-                            </button>
+                            <ActionCard
+                                icon={<DailyLogIcon className="w-6 h-6 text-cyan-200" />}
+                                title="Daily Log"
+                                description="Download day-by-day attendance."
+                                onClick={() => handleDownloadRequest('daily')}
+                                disabled={studentDirectory.size === 0}
+                                colorClass={{ bg: 'bg-cyan-500/20' }}
+                            />
+                            <ActionCard
+                                icon={<MonthlySummaryIcon className="w-6 h-6 text-purple-200" />}
+                                title="Monthly Summary"
+                                description="Download monthly percentages."
+                                onClick={() => handleDownloadRequest('monthly')}
+                                disabled={studentDirectory.size === 0}
+                                colorClass={{ bg: 'bg-purple-500/20' }}
+                            />
+                            <ActionCard
+                                icon={<StudentDetailsIcon className="w-6 h-6 text-blue-200" />}
+                                title="Student Details"
+                                description="Download student contact info."
+                                onClick={() => handleDownloadRequest('details')}
+                                disabled={studentDirectory.size === 0}
+                                colorClass={{ bg: 'bg-blue-500/20' }}
+                            />
                         </div>
                     </div>
                      <div>
@@ -314,12 +413,16 @@ const StudentManagementPanel: React.FC<Omit<AdminDashboardProps, 'onDeleteAdmin'
                     </div>
                      <div className="bg-slate-900/50 rounded-lg max-h-[60vh] overflow-y-auto">
                         {filteredStudents.length === 0 ? (
-                            <p className="text-center text-gray-500 p-8">No students found matching your filters.</p>
+                            <p className="text-center text-gray-500 p-8">
+                                No students found
+                                {(currentUser.designation === Designation.HOD || currentUser.designation === Designation.Incharge) && ` in the ${currentUser.department} department`}
+                                {' '}matching your filters.
+                            </p>
                         ) : (
                             <div className="divide-y divide-slate-800">
                             {filteredStudents.map(student => (
                                 <div key={student.rollNumber} className={`p-4 flex justify-between items-center ${student.isBlocked ? 'opacity-50' : 'hover:bg-slate-800/60 transition-colors cursor-pointer'}`}>
-                                    <div className="flex items-center gap-4 flex-grow" onClick={() => !student.isBlocked && setSelectedStudent(student)}>
+                                    <div className="flex items-center gap-4 flex-grow" onClick={() => !student.isBlocked && handleViewStudent(student)}>
                                         {student.photoBase64 ? (
                                             <img src={student.photoBase64} alt={student.name} className="w-12 h-12 rounded-full object-cover border-2 border-slate-600" />
                                         ) : (
@@ -423,11 +526,12 @@ const StaffManagementPanel: React.FC<Pick<AdminDashboardProps, 'currentUser' | '
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
     const { currentUser, onLogout } = props;
-    const [activeTab, setActiveTab] = useState<'students' | 'staff' | 'marks'>('students');
+    const [activeTab, setActiveTab] = useState<'students' | 'staff' | 'marks' | 'logs'>('students');
 
     const canManageStaff = currentUser.designation === Designation.Principal || currentUser.designation === Designation.VicePrincipal;
     const canManageMarks = [Designation.Principal, Designation.VicePrincipal, Designation.HOD, Designation.Incharge].includes(currentUser.designation);
-    
+    const canViewLogs = [Designation.Principal, Designation.VicePrincipal, Designation.HOD].includes(currentUser.designation);
+
     return (
         <div className="w-full max-w-7xl mx-auto flex flex-col animate-fade-in">
              <header className="mb-6 w-full flex justify-between items-center">
@@ -460,7 +564,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
                         )}
                         {canManageMarks && (
                              <button onClick={() => setActiveTab('marks')} className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-lg transition-colors ${activeTab === 'marks' ? 'border-indigo-400 text-indigo-300' : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'}`}>
-                                Marks Entry
+                                Mid-Term Assessment
+                            </button>
+                        )}
+                        {canViewLogs && (
+                            <button onClick={() => setActiveTab('logs')} className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-lg transition-colors ${activeTab === 'logs' ? 'border-indigo-400 text-indigo-300' : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'}`}>
+                                Action Logs
                             </button>
                         )}
                     </nav>
@@ -471,11 +580,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
                  {activeTab === 'marks' && canManageMarks && (
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                          <div className="lg:col-span-2">
-                             <MarksEntry 
+                             <MidTermAssessment 
                                 currentUser={currentUser}
                                 studentDirectory={props.studentDirectory}
                                 departments={props.departments}
                                 onSaveMarks={props.onUpdateMarks}
+                                canDownloadReport={true}
+                                onLogAction={props.onLogAction}
                             />
                          </div>
                          <div className="lg:col-span-1">
@@ -485,10 +596,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
                                 <p>2. <span className="font-bold text-gray-300">Load Students:</span> Click the button to display the student list.</p>
                                 <p>3. <span className="font-bold text-gray-300">Enter Marks:</span> Input the marks for each student.</p>
                                 <p>4. <span className="font-bold text-gray-300">Save Changes:</span> Click 'Save All Marks' to submit.</p>
+                                <p>5. <span className="font-bold text-gray-300">Download Report:</span> After loading students, you can download the marks data as a CSV file.</p>
                              </div>
                          </div>
                     </div>
                 )}
+                 {activeTab === 'logs' && canViewLogs && <LogPanel adminDirectory={props.adminDirectory} />}
             </main>
         </div>
     );

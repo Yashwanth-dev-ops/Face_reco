@@ -17,61 +17,6 @@ interface TeacherDashboardProps {
     onUpdateMarks: (updates: MarkUpdate[]) => Promise<void>;
 }
 
-// Icons for Action Cards
-const DailyLogIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l2 2 4-4" />
-    </svg>
-);
-
-const MonthlySummaryIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-    </svg>
-);
-
-const StudentDetailsIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.653-.124-1.282-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.653.124-1.282.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-    </svg>
-);
-
-const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-    </svg>
-);
-
-const ActionCard: React.FC<{
-    icon: React.ReactNode;
-    title: string;
-    description: string;
-    onClick: () => void;
-    disabled: boolean;
-    colorClass: { bg: string };
-}> = ({ icon, title, description, onClick, disabled, colorClass }) => (
-    <button
-        onClick={onClick}
-        disabled={disabled}
-        className={`
-            bg-slate-900/50 rounded-lg p-4 flex items-center gap-4 w-full text-left border border-slate-700/80 transition-all duration-200
-            ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-800/60 hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-800 focus:ring-indigo-500'}
-        `}
-    >
-        <div className={`flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center ${colorClass.bg}`}>
-            {icon}
-        </div>
-        <div className="flex-grow">
-            <h3 className="font-bold text-white">{title}</h3>
-            <p className="text-sm text-gray-400">{description}</p>
-        </div>
-        <div className="flex-shrink-0 text-gray-400 group-hover:text-white transition-colors">
-            <DownloadIcon className="w-6 h-6" />
-        </div>
-    </button>
-);
-
 const StudentProfileModal: React.FC<{
     student: StudentInfo;
     attendance: AttendanceRecord[];
@@ -274,30 +219,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = (props) => {
                             <div>
                                 <h2 className="text-2xl font-bold text-indigo-300 mb-4">Actions</h2>
                                 <div className="space-y-3">
-                                    <ActionCard
-                                        icon={<DailyLogIcon className="w-6 h-6 text-cyan-200" />}
-                                        title="Daily Log"
-                                        description="Download day-by-day attendance."
-                                        onClick={handleDownloadLogClick}
-                                        disabled={filteredStudents.length === 0}
-                                        colorClass={{ bg: 'bg-cyan-500/20' }}
-                                    />
-                                    <ActionCard
-                                        icon={<MonthlySummaryIcon className="w-6 h-6 text-purple-200" />}
-                                        title="Monthly Summary"
-                                        description="Download monthly percentages."
-                                        onClick={handleDownloadSummaryClick}
-                                        disabled={filteredStudents.length === 0}
-                                        colorClass={{ bg: 'bg-purple-500/20' }}
-                                    />
-                                    <ActionCard
-                                        icon={<StudentDetailsIcon className="w-6 h-6 text-blue-200" />}
-                                        title="Student Details"
-                                        description="Download student contact info."
-                                        onClick={handleDownloadDetailsClick}
-                                        disabled={filteredStudents.length === 0}
-                                        colorClass={{ bg: 'bg-blue-500/20' }}
-                                    />
+                                    <button onClick={handleDownloadLogClick} disabled={filteredStudents.length === 0} className="w-full px-6 py-3 rounded-full font-semibold text-white bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
+                                        Download Daily Log (CSV)
+                                    </button>
+                                    <button onClick={handleDownloadSummaryClick} disabled={filteredStudents.length === 0} className="w-full px-6 py-3 rounded-full font-semibold text-white bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
+                                        Download Monthly Summary (CSV)
+                                    </button>
+                                     <button onClick={handleDownloadDetailsClick} disabled={filteredStudents.length === 0} className="w-full px-6 py-3 rounded-full font-semibold text-white bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
+                                        Download Student Details (CSV)
+                                    </button>
                                 </div>
                             </div>
                             <div>

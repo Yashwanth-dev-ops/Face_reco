@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { AdminInfo, Designation, Year } from '../types';
 import { CameraCapture } from './CameraCapture';
 
@@ -21,6 +21,8 @@ export const AdminRegistrationScreen: React.FC<AdminRegistrationScreenProps> = (
     const [photoBase64, setPhotoBase64] = useState<string | null>(null);
     const [section, setSection] = useState('1');
     const [year, setYear] = useState<Year>(Year.First);
+
+    const academicDepartments = useMemo(() => departments.filter(d => d !== 'Administration'), [departments]);
     
     useEffect(() => {
         const isPrincipalOrVP = designation === Designation.Principal || designation === Designation.VicePrincipal;
@@ -28,11 +30,12 @@ export const AdminRegistrationScreen: React.FC<AdminRegistrationScreenProps> = (
         if (isPrincipalOrVP) {
             setDepartment('Administration');
         } else {
-            if (department === 'Administration') {
-                setDepartment('');
+            // If the current department is 'Administration' or not in the academic list, reset it.
+            if (department === 'Administration' || !academicDepartments.includes(department)) {
+                setDepartment(academicDepartments[0] || ''); // Set to the first available academic dept, or empty string.
             }
         }
-    }, [designation, department]);
+    }, [designation, academicDepartments, department]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -94,10 +97,19 @@ export const AdminRegistrationScreen: React.FC<AdminRegistrationScreenProps> = (
                             </div>
                         </div>
                     )}
-                    <InputField label="Department" type="text" value={department} onChange={setDepartment} list="department-list" required disabled={isDepartmentDisabled} />
-                    <datalist id="department-list">
-                        {departments.map(opt => <option key={opt} value={opt} />)}
-                    </datalist>
+                    
+                    {isDepartmentDisabled ? (
+                         <InputField label="Department" type="text" value={department} onChange={() => {}} required disabled={true} />
+                    ) : (
+                        <SelectField 
+                            label="Department" 
+                            value={department} 
+                            onChange={setDepartment} 
+                            options={academicDepartments} 
+                            required 
+                        />
+                    )}
+
                     <InputField label="Password" type="password" value={password} onChange={setPassword} required />
                     
                     <CameraCapture 
@@ -149,6 +161,7 @@ const SelectField: React.FC<{label: string, value: string, onChange: (val: any) 
             className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500 transition"
             required={required}
         >
+            {options.length === 0 && <option value="" disabled>No departments found</option>}
             {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
         </select>
     </div>

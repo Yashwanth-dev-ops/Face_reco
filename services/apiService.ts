@@ -6,6 +6,7 @@ import {
     loadDepartments, saveDepartments 
 } from './storageService';
 import { StudentInfo, AdminInfo, AttendanceRecord, Emotion, Designation } from '../types';
+import { logAdminAction } from './logService';
 
 const API_LATENCY = 200; // ms
 
@@ -161,7 +162,7 @@ export type MarkUpdate = {
     marks: number | null;
 };
 
-export const updateBulkStudentMarks = (updates: MarkUpdate[]): Promise<Map<string, StudentInfo>> => {
+export const updateBulkStudentMarks = (updates: MarkUpdate[], adminId: string): Promise<Map<string, StudentInfo>> => {
     return new Promise((resolve) => {
         setTimeout(() => {
             const students = loadStudentDirectory();
@@ -188,6 +189,7 @@ export const updateBulkStudentMarks = (updates: MarkUpdate[]): Promise<Map<strin
             });
 
             saveStudentDirectory(students);
+            logAdminAction(adminId, 'Bulk Marks Update', `Updated marks for ${updates.length} students. Subject: ${updates[0]?.subject || 'N/A'}`);
             resolve(students);
         }, API_LATENCY);
     });
@@ -222,7 +224,7 @@ export const linkNewFaceForStudent = (rollNumber: string): Promise<Map<number, s
     });
 };
 
-export const deleteStudent = (rollNumber: string): Promise<{updatedStudents: Map<string, StudentInfo>, updatedFaceLinks: Map<number, string>, updatedAttendance: AttendanceRecord[]}> => {
+export const deleteStudent = (rollNumber: string, adminId: string): Promise<{updatedStudents: Map<string, StudentInfo>, updatedFaceLinks: Map<number, string>, updatedAttendance: AttendanceRecord[]}> => {
     return new Promise((resolve) => {
         const students = loadStudentDirectory();
         const links = loadFaceLinks();
@@ -246,12 +248,13 @@ export const deleteStudent = (rollNumber: string): Promise<{updatedStudents: Map
 
         students.delete(rollNumber);
         saveStudentDirectory(students);
+        logAdminAction(adminId, 'Delete Student', `Deleted student with Roll Number: ${rollNumber}`);
         
         resolve({ updatedStudents: students, updatedFaceLinks: links, updatedAttendance: newAttendance });
     });
 };
 
-export const toggleStudentBlock = (rollNumber: string): Promise<StudentInfo> => {
+export const toggleStudentBlock = (rollNumber: string, adminId: string): Promise<StudentInfo> => {
      return new Promise((resolve, reject) => {
         const students = loadStudentDirectory();
         const student = students.get(rollNumber);
@@ -262,11 +265,13 @@ export const toggleStudentBlock = (rollNumber: string): Promise<StudentInfo> => 
         const updatedStudent = { ...student, isBlocked: !student.isBlocked };
         students.set(rollNumber, updatedStudent);
         saveStudentDirectory(students);
+        const action = updatedStudent.isBlocked ? 'Block Student' : 'Unblock Student';
+        logAdminAction(adminId, action, `Target Roll Number: ${rollNumber}`);
         resolve(updatedStudent);
      });
 };
 
-export const deleteAdmin = (idNumber: string): Promise<Map<string, AdminInfo>> => {
+export const deleteAdmin = (idNumber: string, adminId: string): Promise<Map<string, AdminInfo>> => {
     return new Promise((resolve, reject) => {
         const admins = loadAdminDirectory();
         const adminToDelete = admins.get(idNumber);
@@ -280,11 +285,12 @@ export const deleteAdmin = (idNumber: string): Promise<Map<string, AdminInfo>> =
 
         admins.delete(idNumber);
         saveAdminDirectory(admins);
+        logAdminAction(adminId, 'Delete Admin', `Deleted admin with ID Number: ${idNumber}`);
         resolve(admins);
     });
 };
 
-export const toggleAdminBlock = (idNumber: string): Promise<AdminInfo> => {
+export const toggleAdminBlock = (idNumber: string, adminId: string): Promise<AdminInfo> => {
      return new Promise((resolve, reject) => {
         const admins = loadAdminDirectory();
         const admin = admins.get(idNumber);
@@ -297,6 +303,8 @@ export const toggleAdminBlock = (idNumber: string): Promise<AdminInfo> => {
         const updatedAdmin = { ...admin, isBlocked: !admin.isBlocked };
         admins.set(idNumber, updatedAdmin);
         saveAdminDirectory(admins);
+        const action = updatedAdmin.isBlocked ? 'Block Admin' : 'Unblock Admin';
+        logAdminAction(adminId, action, `Target ID Number: ${idNumber}`);
         resolve(updatedAdmin);
      });
 };
@@ -321,4 +329,15 @@ export const logAttendance = (persistentId: number, emotion: Emotion): Promise<A
         saveAttendance(newAttendance);
         resolve(newAttendance);
     });
+};
+
+/**
+ * Logs a generic administrator action. This is a fire-and-forget action
+ * used for auditing non-data-mutation events like viewing or downloading reports.
+ * @param adminId The ID of the administrator performing the action.
+ * @param action A short description of the action type.
+ * @param details Specific details about the action.
+ */
+export const logGenericAdminAction = (adminId: string, action: string, details: string): void => {
+    logAdminAction(adminId, action, details);
 };

@@ -93,16 +93,24 @@ const StudentMarksPanel: React.FC<{ marks: MidTermMarks[] }> = ({ marks }) => {
                                 <th className="p-3 text-xs font-semibold uppercase text-gray-500 tracking-wider">Subject</th>
                                 <th className="p-3 text-xs font-semibold uppercase text-gray-500 tracking-wider text-center">Mid-I Marks</th>
                                 <th className="p-3 text-xs font-semibold uppercase text-gray-500 tracking-wider text-center">Mid-II Marks</th>
+                                <th className="p-3 text-xs font-semibold uppercase text-gray-500 tracking-wider text-center">Average</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800">
-                            {marks.map(mark => (
-                                <tr key={mark.subject} className="hover:bg-slate-800/60 transition-colors">
-                                    <td className="p-3 text-sm text-gray-300 font-semibold">{mark.subject}</td>
-                                    <td className="p-3 text-sm text-white text-center font-mono">{mark.mid1 ?? 'N/A'}</td>
-                                    <td className="p-3 text-sm text-white text-center font-mono">{mark.mid2 ?? 'N/A'}</td>
-                                </tr>
-                            ))}
+                            {marks.map(mark => {
+                                let average: string | number = 'N/A';
+                                if (mark.mid1 !== null && mark.mid2 !== null) {
+                                    average = ((mark.mid1 + mark.mid2) / 2).toFixed(2);
+                                }
+                                return (
+                                    <tr key={mark.subject} className="hover:bg-slate-800/60 transition-colors">
+                                        <td className="p-3 text-sm text-gray-300 font-semibold">{mark.subject}</td>
+                                        <td className="p-3 text-sm text-white text-center font-mono">{mark.mid1 ?? 'N/A'}</td>
+                                        <td className="p-3 text-sm text-white text-center font-mono">{mark.mid2 ?? 'N/A'}</td>
+                                        <td className="p-3 text-sm text-white text-center font-mono font-bold">{average}</td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 )}
