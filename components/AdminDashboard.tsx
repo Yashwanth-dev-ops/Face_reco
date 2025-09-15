@@ -1,9 +1,11 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { StudentInfo, AdminInfo, Designation, Year, AttendanceRecord } from '../types';
 import { emotionUIConfig } from './uiConfig';
 import { exportMonthlySummaryToCSV, exportMarksReportToCSV, exportStudentDetailsReportToCSV } from '../services/csvExportService';
 import { MarksEntry } from './MarksEntry';
 import { MarkUpdate } from '../services/apiService';
+import { DownloadReportModal } from './DownloadReportModal';
 
 interface AdminDashboardProps {
     currentUser: AdminInfo;
@@ -22,13 +24,13 @@ interface AdminDashboardProps {
 }
 
 const TrashIcon: React.FC<{className?: string}> = ({className}) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
     </svg>
 );
 
 const BlockIcon: React.FC<{className?: string}> = ({className}) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
     </svg>
 );
@@ -84,7 +86,7 @@ const StudentProfileModal: React.FC<{
                         onClick={onClose}
                         className="p-2 rounded-full text-gray-400 hover:bg-slate-700 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-slate-500"
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
                     </button>
@@ -145,6 +147,8 @@ const StudentManagementPanel: React.FC<Omit<AdminDashboardProps, 'onDeleteAdmin'
     const [departmentFilter, setDepartmentFilter] = useState<string>('ALL');
     const [yearFilter, setYearFilter] = useState<string>('ALL');
     const [sectionFilter, setSectionFilter] = useState<string>('ALL');
+    const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+    const [reportTypeToDownload, setReportTypeToDownload] = useState<'daily' | 'monthly' | 'details' | null>(null);
 
     const hasFullControl = currentUser.designation === Designation.Principal || currentUser.designation === Designation.VicePrincipal || currentUser.designation === Designation.HOD;
     const canDelete = currentUser.designation !== Designation.Incharge;
@@ -171,25 +175,77 @@ const StudentManagementPanel: React.FC<Omit<AdminDashboardProps, 'onDeleteAdmin'
         }).sort((a, b) => a.name.localeCompare(b.name));
     }, [studentDirectory, departmentFilter, yearFilter, sectionFilter]);
 
-    const handleDownloadLogClick = () => {
+    // Direct download handlers for specific-section incharges
+    const downloadDailyLogForFiltered = () => {
         const filteredRollNumbers = new Set(filteredStudents.map(s => s.rollNumber));
         const persistentIdsForReport = new Set<number>();
-        for (const [pid, roll] of faceLinks.entries()) {
+        // FIX: The callback parameters for Map.forEach were swapped, causing a type mismatch.
+        // For `faceLinks: Map<number, string>`, the callback is `(value: string, key: number)`.
+        // The parameter order has been corrected to `(roll, pid)` to match this signature.
+        faceLinks.forEach((roll, pid) => {
             if (filteredRollNumbers.has(roll)) {
                 persistentIdsForReport.add(pid);
             }
-        }
+        });
         const filteredAttendance = attendance.filter(record => persistentIdsForReport.has(record.persistentId));
         onDownload(filteredAttendance);
     };
+    const downloadMonthlySummaryForFiltered = () => exportMonthlySummaryToCSV(filteredStudents, attendance, faceLinks);
+    const downloadStudentDetailsForFiltered = () => exportStudentDetailsReportToCSV(filteredStudents, Array.from(adminDirectory.values()));
 
-    const handleDownloadSummaryClick = () => {
-        exportMonthlySummaryToCSV(filteredStudents, attendance, faceLinks);
+
+    const handleDownloadRequest = (type: 'daily' | 'monthly' | 'details') => {
+        const isPrivilegedUser = [Designation.Principal, Designation.VicePrincipal, Designation.HOD].includes(currentUser.designation);
+        const isInchargeForAllSections = currentUser.designation === Designation.Incharge && (!currentUser.section || currentUser.section === 'All Sections');
+
+        if (isPrivilegedUser || isInchargeForAllSections) {
+            setReportTypeToDownload(type);
+            setIsDownloadModalOpen(true);
+        } else {
+            // Incharge for a specific section, download directly
+            if (type === 'daily') downloadDailyLogForFiltered();
+            else if (type === 'monthly') downloadMonthlySummaryForFiltered();
+            else if (type === 'details') downloadStudentDetailsForFiltered();
+        }
+    };
+    
+    const handleModalDownloadSubmit = (selectedYear: Year, selectedSection: string) => {
+        const departmentToFilter = (currentUser.designation === Designation.HOD || currentUser.designation === Designation.Incharge)
+            ? currentUser.department
+            : 'ALL';
+
+        const studentsForReport = Array.from(studentDirectory.values()).filter(student => {
+            const departmentMatch = departmentToFilter === 'ALL' || student.department === departmentToFilter;
+            const yearMatch = student.year === selectedYear;
+            const sectionMatch = selectedSection === 'ALL' || student.section === selectedSection;
+            return departmentMatch && yearMatch && sectionMatch;
+        });
+
+        if (reportTypeToDownload === 'daily') {
+            const rollNumbers = new Set(studentsForReport.map(s => s.rollNumber));
+            const pids = new Set<number>();
+            faceLinks.forEach((roll, pid) => { if (rollNumbers.has(roll)) pids.add(pid); });
+            const attendanceForReport = attendance.filter(rec => pids.has(rec.persistentId));
+            onDownload(attendanceForReport);
+        } else if (reportTypeToDownload === 'monthly') {
+            exportMonthlySummaryToCSV(studentsForReport, attendance, faceLinks);
+        } else if (reportTypeToDownload === 'details') {
+            exportStudentDetailsReportToCSV(studentsForReport, Array.from(adminDirectory.values()));
+        }
+
+        setIsDownloadModalOpen(false);
+        setReportTypeToDownload(null);
     };
 
-    const handleDownloadDetailsClick = () => {
-        exportStudentDetailsReportToCSV(filteredStudents, Array.from(adminDirectory.values()));
+    const getReportTitle = () => {
+        switch(reportTypeToDownload) {
+            case 'daily': return 'Download Daily Attendance Log';
+            case 'monthly': return 'Download Monthly Summary';
+            case 'details': return 'Download Student Details';
+            default: return 'Download Report';
+        }
     };
+
 
     return (
         <>
@@ -201,18 +257,25 @@ const StudentManagementPanel: React.FC<Omit<AdminDashboardProps, 'onDeleteAdmin'
                     onClose={() => setSelectedStudent(null)}
                 />
             )}
+            {isDownloadModalOpen && (
+                <DownloadReportModal
+                    onClose={() => setIsDownloadModalOpen(false)}
+                    onSubmit={handleModalDownloadSubmit}
+                    title={getReportTitle()}
+                />
+            )}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-1 space-y-6">
                     <div>
                         <h2 className="text-2xl font-bold text-indigo-300 mb-4">Actions</h2>
                          <div className="space-y-3">
-                            <button onClick={handleDownloadLogClick} disabled={filteredStudents.length === 0} className="w-full px-6 py-3 rounded-lg font-semibold text-white bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
+                            <button onClick={() => handleDownloadRequest('daily')} disabled={studentDirectory.size === 0} className="w-full px-6 py-3 rounded-full font-semibold text-white bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
                                 Download Daily Log (CSV)
                             </button>
-                             <button onClick={handleDownloadSummaryClick} disabled={filteredStudents.length === 0} className="w-full px-6 py-3 rounded-lg font-semibold text-white bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
+                             <button onClick={() => handleDownloadRequest('monthly')} disabled={studentDirectory.size === 0} className="w-full px-6 py-3 rounded-full font-semibold text-white bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
                                 Download Monthly Summary (CSV)
                             </button>
-                            <button onClick={handleDownloadDetailsClick} disabled={filteredStudents.length === 0} className="w-full px-6 py-3 rounded-lg font-semibold text-white bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
+                            <button onClick={() => handleDownloadRequest('details')} disabled={studentDirectory.size === 0} className="w-full px-6 py-3 rounded-full font-semibold text-white bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-0.5">
                                 Download Student Details (CSV)
                             </button>
                         </div>

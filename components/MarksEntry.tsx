@@ -29,14 +29,33 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ currentUser, studentDire
     // An incharge may teach any section, so the section filter should not be disabled for them in marks entry.
     const isSectionDisabled = false;
 
-    useEffect(() => {
-        // Default the section to the Incharge's assigned section, but allow them to change it.
-        if (currentUser.designation === Designation.Incharge) {
-            if (currentUser.section && currentUser.section !== 'All Sections') {
-                setSection(currentUser.section);
+    // Dynamically find available sections based on the selected year and department from the student directory.
+    const availableSections = useMemo(() => {
+        const sections = new Set<string>();
+        for (const student of studentDirectory.values()) {
+            if (student.department === department && student.year === year) {
+                sections.add(student.section);
             }
         }
+        // Sort sections numerically (e.g., 1, 2, 10 instead of 1, 10, 2)
+        const sortedSections = Array.from(sections).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        return ['ALL', ...sortedSections];
+    }, [department, year, studentDirectory]);
+
+    // Effect to set the initial section for an Incharge.
+    useEffect(() => {
+        if (currentUser.designation === Designation.Incharge && currentUser.section && currentUser.section !== 'All Sections') {
+            setSection(currentUser.section);
+        }
     }, [currentUser]);
+
+    // Effect to reset the section if it becomes invalid when other filters change.
+    useEffect(() => {
+        if (!availableSections.includes(section)) {
+            setSection('ALL');
+            setStudentsLoaded(false);
+        }
+    }, [availableSections, section]);
 
 
     const filteredStudents = useMemo(() => {
@@ -131,11 +150,11 @@ export const MarksEntry: React.FC<MarksEntryProps> = ({ currentUser, studentDire
                 <div>
                     <label className="block text-sm font-medium text-gray-300 mb-1">Section</label>
                     <select value={section} onChange={e => {setSection(e.target.value); setStudentsLoaded(false);}} disabled={isSectionDisabled} className="w-full bg-slate-800 border border-slate-600 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500 transition disabled:bg-slate-700 disabled:cursor-not-allowed">
-                        <option value="ALL">All Sections</option>
-                        <option value="1">Section 1</option>
-                        <option value="2">Section 2</option>
-                        <option value="3">Section 3</option>
-                        <option value="4">Section 4</option>
+                        {availableSections.map(s => (
+                            <option key={s} value={s}>
+                                {s === 'ALL' ? 'All Sections' : `Section ${s}`}
+                            </option>
+                        ))}
                     </select>
                 </div>
                 <div>
