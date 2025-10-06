@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Conversation, ChatMessage, AdminInfo, StudentInfo, Designation, TimeTableEntry, KnowledgeDocument } from '../types';
 import { ToggleSwitch } from './ToggleSwitch';
@@ -341,23 +342,46 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
 
 
     const availableContacts = useMemo(() => {
-        // FIX: Refactor logic to use type guards on `currentUser` to resolve 'unknown' type errors.
         if (currentUser.userType === 'ADMIN') {
-            const isHighPrivilege = [Designation.Chairman, Designation.Principal, Designation.VicePrincipal].includes(currentUser.designation);
-
+            const { designation, department, idNumber } = currentUser;
+            const isHighPrivilege = [Designation.Chairman, Designation.Principal, Designation.VicePrincipal].includes(designation);
+            
             if (isHighPrivilege) {
-                const targets = Array.from(adminDirectory.values()).filter(admin =>
+                // High privilege can contact HODs and Incharges.
+                const targets = Array.from(adminDirectory.values()).filter((admin: AdminInfo) =>
                     (admin.designation === Designation.HOD || admin.designation === Designation.Incharge) &&
-                    admin.idNumber !== currentUser.idNumber
+                    admin.idNumber !== idNumber
                 );
-                return targets.sort((a, b) => a.name.localeCompare(b.name));
+                return targets.sort((a: AdminInfo, b: AdminInfo) => a.name.localeCompare(b.name));
             }
-    
-            // For other admins (not high privilege)
+
+            if (designation === Designation.HOD) {
+                // HOD can contact all staff and students in their department, plus high privilege admins.
+                const contacts: (StudentInfo | AdminInfo)[] = [];
+                
+                // Add students from their department
+                studentDirectory.forEach(student => {
+                    if (student.department === department) {
+                        contacts.push(student);
+                    }
+                });
+
+                // Add staff from their department (excluding self) and high-privilege staff
+                adminDirectory.forEach(admin => {
+                    const isAdminHighPrivilege = [Designation.Chairman, Designation.Principal, Designation.VicePrincipal].includes(admin.designation);
+                    if (admin.idNumber !== idNumber && (admin.department === department || isAdminHighPrivilege)) {
+                        contacts.push(admin);
+                    }
+                });
+                
+                return contacts.sort((a, b) => a.name.localeCompare(b.name));
+            }
+
+            // For Teachers and Incharges, the logic is based on the classes they teach.
             if (timeTable) {
                 const studentIds = new Set<string>();
                 timeTable.forEach(entry => {
-                    if (entry.teacherId === currentUser.idNumber) {
+                    if (entry.teacherId === idNumber) {
                         studentDirectory.forEach(student => {
                             if (student.department === entry.department && student.year === entry.year && student.section === entry.section) {
                                 studentIds.add(student.rollNumber);
@@ -365,8 +389,23 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
                         });
                     }
                 });
-                return Array.from(studentIds).map(id => studentDirectory.get(id)).filter((s): s is StudentInfo => !!s);
+                // Teachers can also contact their HOD and high privilege admins.
+                const contactableAdminIds = new Set<string>();
+                adminDirectory.forEach(admin => {
+                    const isAdminHighPrivilege = [Designation.Chairman, Designation.Principal, Designation.VicePrincipal].includes(admin.designation);
+                    const isOwnHOD = admin.designation === Designation.HOD && admin.department === department;
+                    if(isAdminHighPrivilege || isOwnHOD) {
+                        contactableAdminIds.add(admin.idNumber);
+                    }
+                });
+
+                const studentContacts = Array.from(studentIds).map(id => studentDirectory.get(id)).filter((s): s is StudentInfo => !!s);
+                const adminContacts = Array.from(contactableAdminIds).map(id => adminDirectory.get(id)).filter((a): a is AdminInfo => !!a);
+                
+                return [...studentContacts, ...adminContacts].sort((a, b) => a.name.localeCompare(b.name));
             }
+            
+            return [];
 
         } else { // currentUser.userType === 'STUDENT'
             const contactIds = new Set<string>();
@@ -385,8 +424,6 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
             const roleOrder: Designation[] = [Designation.Chairman, Designation.Principal, Designation.VicePrincipal, Designation.ExamsOffice, Designation.HOD, Designation.Incharge, Designation.Teacher];
             return Array.from(contactIds).map(id => adminDirectory.get(id)).filter((t): t is AdminInfo => !!t).sort((a, b) => roleOrder.indexOf(a.designation) - roleOrder.indexOf(b.designation) || a.name.localeCompare(b.name));
         }
-
-        return [];
     }, [currentUser, timeTable, adminDirectory, studentDirectory]);
     
     const otherParticipant = selectedConversation ? getParticipantInfo(selectedConversation.participantIds.find(id => id !== currentUserId)!) : null;

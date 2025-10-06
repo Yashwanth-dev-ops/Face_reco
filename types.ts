@@ -50,6 +50,10 @@ export enum HeadPose {
 
 export type Theme = 'light' | 'dark';
 
+export interface UserPreferences {
+    theme: Theme;
+}
+
 export interface BoundingBox {
     x: number;
     y: number;

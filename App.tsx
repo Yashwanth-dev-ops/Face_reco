@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { detectFacesAndHands } from './services/geminiService';
 import { exportAttendanceToCSV } from './services/csvExportService';
@@ -7,7 +8,7 @@ import * as apiService from './services/apiService';
 import * as emailService from './services/emailService';
 import { MarkUpdate } from './services/apiService';
 // Fix: Import MediaSettingsRange for camera focus capabilities.
-import { DetectionResult, FaceResult, BoundingBox, StudentInfo, AdminInfo, AttendanceRecord, Emotion, Year, Designation, PasswordResetToken, SimulatedEmail, Theme, MediaSettingsRange, TimeTableEntry, LeaveRecord, Conversation, Holiday, StudyGroup, SharedNote, AttendanceAnomaly, GroupTask, Notification, Toast, GroupEvent, KnowledgeDocument } from './types';
+import { DetectionResult, FaceResult, BoundingBox, StudentInfo, AdminInfo, AttendanceRecord, Emotion, Year, Designation, PasswordResetToken, SimulatedEmail, Theme, MediaSettingsRange, TimeTableEntry, LeaveRecord, Conversation, Holiday, StudyGroup, SharedNote, AttendanceAnomaly, GroupTask, Notification, Toast, GroupEvent, KnowledgeDocument, UserPreferences } from './types';
 import { CameraIcon } from './components/CameraIcon';
 import { DetectionOverlay } from './components/DetectionOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -32,6 +33,7 @@ import { HolidayManagementScreen } from './components/HolidayManagementPanel';
 import { AIChatbot } from './components/AIChatbot';
 import { ToastContainer } from './components/ToastContainer';
 import { RAGKnowledgeBasePanel } from './components/RAGKnowledgeBasePanel';
+import { saveUserPreferences, loadUserPreferences } from './services/storageService';
 
 
 type View = 'LOGIN' | 'STUDENT_REGISTRATION' | 'ADMIN_REGISTRATION' | 'ADMIN_DASHBOARD' | 'TEACHER_DASHBOARD' | 'STUDENT_DASHBOARD' | 'ANALYZER' | 'VERIFY_ACCOUNT' | 'FORGOT_PASSWORD' | 'RESET_PASSWORD' | 'SETTINGS' | 'ONBOARDING' | 'BLOCKED' | 'HOLIDAY_MANAGEMENT';
@@ -99,7 +101,7 @@ const App: React.FC = () => {
     const [userToVerify, setUserToVerify] = useState<UserToVerify | null>(null);
     const [userToResetPassword, setUserToResetPassword] = useState<UserToResetPassword | null>(null);
     const [simulatedEmails, setSimulatedEmails] = useState<SimulatedEmail[]>([]);
-    const [theme, setTheme] = useState<Theme>('dark');
+    const [preferences, setPreferences] = useState<UserPreferences>({ theme: 'dark' });
     const [blockedInfo, setBlockedInfo] = useState<BlockedInfo | null>(null);
     const [analyzerContext, setAnalyzerContext] = useState<AnalyzerContext | null>(null);
     const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -137,6 +139,19 @@ const App: React.FC = () => {
     const ANALYSIS_INTERVAL = 2000;
     const RATE_LIMIT_PAUSE_MS = 61000;
     const ATTENDANCE_LOG_INTERVAL_MS = 5 * 60 * 1000;
+
+    // --- Preferences Management ---
+    const updatePreferences = (newPrefs: Partial<UserPreferences>) => {
+        setPreferences(prev => {
+            const updated = { ...prev, ...newPrefs };
+            saveUserPreferences(updated);
+            return updated;
+        });
+    };
+    
+    const setTheme = (newTheme: Theme) => {
+        updatePreferences({ theme: newTheme });
+    };
 
     // Toast management functions
     const addToast = (toast: Omit<Toast, 'id'>) => {
@@ -179,20 +194,17 @@ const App: React.FC = () => {
     
      // Apply theme and load from storage
     useEffect(() => {
-        const storedTheme = localStorage.getItem('theme') as Theme | null;
-        if (storedTheme) {
-            setTheme(storedTheme);
-        }
+        const storedPrefs = loadUserPreferences();
+        setPreferences(prev => ({...prev, ...storedPrefs}));
     }, []);
 
     useEffect(() => {
-        if (theme === 'dark') {
+        if (preferences.theme === 'dark') {
             document.documentElement.classList.add('dark');
         } else {
             document.documentElement.classList.remove('dark');
         }
-        localStorage.setItem('theme', theme);
-    }, [theme]);
+    }, [preferences.theme]);
 
     // Load all static data from API service on initial render
     useEffect(() => {
@@ -1090,7 +1102,7 @@ const App: React.FC = () => {
             case 'VERIFY_ACCOUNT': return userToVerify ? <VerificationScreen userToVerify={userToVerify} onVerified={() => {setUserToVerify(null); setView('LOGIN');}} onBackToLogin={() => setView('LOGIN')} /> : null;
             case 'FORGOT_PASSWORD': return <ForgotPasswordScreen onRequestReset={handleRequestPasswordReset} onBackToLogin={() => setView('LOGIN')} />;
             case 'RESET_PASSWORD': return <ResetPasswordScreen onResetPassword={handleResetPassword} onBackToLogin={() => setView('LOGIN')} />;
-            case 'SETTINGS': return currentUser ? <SettingsScreen onBackToDashboard={() => setView(currentUser.userType === 'STUDENT' ? 'STUDENT_DASHBOARD' : (currentUser.designation === Designation.Teacher || currentUser.designation === Designation.Incharge ? 'TEACHER_DASHBOARD' : 'ADMIN_DASHBOARD'))} onChangePassword={handleChangePassword} onDeleteSelf={handleDeleteSelf} theme={theme} setTheme={setTheme} /> : null;
+            case 'SETTINGS': return currentUser ? <SettingsScreen onBackToDashboard={() => setView(currentUser.userType === 'STUDENT' ? 'STUDENT_DASHBOARD' : (currentUser.designation === Designation.Teacher || currentUser.designation === Designation.Incharge ? 'TEACHER_DASHBOARD' : 'ADMIN_DASHBOARD'))} onChangePassword={handleChangePassword} onDeleteSelf={handleDeleteSelf} theme={preferences.theme} setTheme={setTheme} /> : null;
             case 'ONBOARDING': return currentUser?.userType === 'STUDENT' ? <OnboardingScreen currentUser={currentUser} onComplete={handleCompleteStudentOnboarding} /> : null;
             case 'BLOCKED': return blockedInfo ? <BlockedScreen blockedInfo={blockedInfo} onBackToLogin={() => {setBlockedInfo(null); setView('LOGIN');}} /> : null;
             case 'HOLIDAY_MANAGEMENT': return currentUser?.userType === 'ADMIN' ? <HolidayManagementScreen holidays={holidays} onGrantHoliday={handleGrantHoliday} onCancelHoliday={handleCancelHoliday} onBackToDashboard={() => setView('ADMIN_DASHBOARD')} /> : null;

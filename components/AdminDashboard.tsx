@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { StudentInfo, AdminInfo, Designation, Year, AttendanceRecord, TimeTableEntry, LeaveRecord, Conversation, AttendanceAnomaly, StudyGroup, Notification, KnowledgeDocument } from '../types';
 import { MidTermAssessment } from './MidTermAssessment';
@@ -366,7 +367,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
             case 'logs':
                 return <LogPanel adminDirectory={adminDirectory} />;
             case 'communications':
-                return <CommunicationPanel currentUser={{ ...currentUser, userType: 'ADMIN' }} conversations={conversations} onSendMessage={props.onSendMessage} studentDirectory={studentDirectory} adminDirectory={adminDirectory} onQueryKnowledgeBase={props.onQueryKnowledgeBase} />;
+                return <CommunicationPanel currentUser={{ ...currentUser, userType: 'ADMIN' }} conversations={conversations} onSendMessage={props.onSendMessage} studentDirectory={studentDirectory} adminDirectory={adminDirectory} timeTable={timeTable} onQueryKnowledgeBase={props.onQueryKnowledgeBase} />;
             default:
                 return null;
         }
@@ -393,7 +394,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
             {blockStudentTarget && <BlockStudentModal student={blockStudentTarget} currentUser={currentUser} onClose={() => setBlockStudentTarget(null)} onBlock={(...args) => { props.onBlockStudent(...args); setBlockStudentTarget(null); }} />}
             {isBroadcastModalOpen && <BroadcastMessageModal currentUser={currentUser} departments={departments} onClose={() => setIsBroadcastModalOpen(false)} onSendBroadcast={onSendBroadcast} />}
 
-            <header className="mb-6 w-full flex flex-col sm:flex-row justify-between items-center gap-4">
+            <header className="mb-6 w-full flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                  <div className="flex items-center gap-4">
                      {currentUser.photoBase64 ? <img src={currentUser.photoBase64} alt={currentUser.name} className="w-14 h-14 rounded-full object-cover border-2 border-gray-600" /> : <img src="https://krucet.ac.in/wp-content/uploads/2020/09/cropped-kru-150-round-non-transparent-1.png" alt="Logo" className="w-14 h-14 rounded-full" />}
                     <div>
@@ -401,7 +402,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
                         <p className="text-sm text-gray-400">Welcome, {currentUser.name} ({currentUser.designation})</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2 self-end sm:self-auto">
                     <NotificationBell 
                         notifications={notifications}
                         onMarkAsRead={onMarkNotificationAsRead}

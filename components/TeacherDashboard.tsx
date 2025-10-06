@@ -292,7 +292,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = (props) => {
     
     return (
         <div className="w-full max-w-7xl mx-auto flex flex-col animate-slide-up p-4 sm:p-6 lg:p-8">
-            <header className="mb-6 w-full flex flex-col sm:flex-row justify-between items-center gap-4">
+            <header className="mb-6 w-full flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div className="flex items-center gap-4">
                     {currentUser.photoBase64 ? (
                         <img src={currentUser.photoBase64} alt={currentUser.name} className="w-14 h-14 rounded-full object-cover border-2 border-gray-300 dark:border-gray-600" />
@@ -304,7 +304,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = (props) => {
                         <p className="text-sm text-gray-500 dark:text-gray-400">Welcome, {currentUser.name} ({currentUser.designation})</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2 self-end sm:self-auto">
                     <NotificationBell
                         notifications={notifications}
                         onMarkAsRead={onMarkNotificationAsRead}

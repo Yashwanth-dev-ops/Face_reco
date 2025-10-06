@@ -1,4 +1,4 @@
-import { StudentInfo, AdminInfo, AttendanceRecord, VerificationToken, PasswordResetToken, TimeTableEntry, LeaveRecord, Conversation, Holiday, StudyGroup, SharedNote, Notification } from '../types';
+import { StudentInfo, AdminInfo, AttendanceRecord, VerificationToken, PasswordResetToken, TimeTableEntry, LeaveRecord, Conversation, Holiday, StudyGroup, SharedNote, Notification, UserPreferences } from '../types';
 import { LogEntry } from './logService';
 
 const STUDENT_DIRECTORY_KEY = 'vision_ai_student_directory';
@@ -16,6 +16,7 @@ const HOLIDAYS_KEY = 'vision_ai_holidays';
 const STUDY_GROUPS_KEY = 'vision_ai_study_groups';
 const SHARED_NOTES_KEY = 'vision_ai_shared_notes';
 const NOTIFICATIONS_KEY = 'vision_ai_notifications';
+const USER_PREFERENCES_KEY = 'vision_ai_user_preferences';
 
 
 // --- Custom JSON serialization for handling Infinity ---
@@ -32,6 +33,25 @@ const reviver = (key: string, value: any) => {
     }
     return value;
 };
+
+// --- User Preferences ---
+export function saveUserPreferences(preferences: UserPreferences): void {
+    try {
+        localStorage.setItem(USER_PREFERENCES_KEY, JSON.stringify(preferences));
+    } catch (error) {
+        console.error("Failed to save user preferences:", error);
+    }
+}
+
+export function loadUserPreferences(): Partial<UserPreferences> {
+    try {
+        const data = localStorage.getItem(USER_PREFERENCES_KEY);
+        return data ? JSON.parse(data) : {};
+    } catch (error) {
+        console.error("Failed to load user preferences:", error);
+        return {};
+    }
+}
 
 
 // --- Notifications ---
