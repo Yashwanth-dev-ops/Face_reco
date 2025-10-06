@@ -15,8 +15,8 @@ interface FaceLoginProps {
 type Status = 'INITIALIZING' | 'READY' | 'VERIFYING';
 
 const FaceLoginSpinner: React.FC<{text: string}> = ({ text }) => (
-    <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-center backdrop-blur-sm z-20">
-        <div className="w-12 h-12 border-4 border-t-4 border-gray-200 border-t-indigo-400 rounded-full animate-spin"></div>
+    <div className="absolute inset-0 bg-gray-800/80 flex flex-col items-center justify-center text-center backdrop-blur-sm z-20 rounded-2xl">
+        <div className="w-12 h-12 border-4 border-t-4 border-gray-200 border-t-blue-400 rounded-full animate-spin"></div>
         <p className="mt-4 text-lg font-semibold text-white">{text}</p>
     </div>
 );
@@ -74,7 +74,7 @@ export const FaceLogin: React.FC<FaceLoginProps> = ({ onLoginSuccess, onCancel, 
             if (matchedUserId !== 'UNKNOWN' && confidence > confidenceThreshold) {
                 const user = await apiService.getUserById(matchedUserId);
                 if (user) {
-                    if ((user.userType === 'STUDENT' && user.isBlocked) || (user.userType === 'ADMIN' && user.isBlocked)) {
+                    if ((user as any).isBlocked) {
                         throw new Error(`Login failed: Account for ${user.name} is blocked.`);
                     }
                     onLoginSuccess(user);
@@ -108,6 +108,8 @@ export const FaceLogin: React.FC<FaceLoginProps> = ({ onLoginSuccess, onCancel, 
             onFailure("Could not capture video frame.");
             return;
         }
+        context.translate(video.videoWidth, 0);
+        context.scale(-1, 1);
         context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
         const capturedImageBase64 = canvas.toDataURL('image/jpeg', 0.9).split(',')[1];
         
@@ -118,10 +120,10 @@ export const FaceLogin: React.FC<FaceLoginProps> = ({ onLoginSuccess, onCancel, 
         <div className="w-full text-center animate-fade-in relative">
             {status === 'VERIFYING' && <FaceLoginSpinner text="Verifying Identity..." />}
              <div className={`${status === 'VERIFYING' ? 'opacity-50' : 'opacity-100'}`}>
-                <h3 className="text-xl font-semibold text-white mb-4">Face ID Login</h3>
+                <h3 className="text-2xl font-bold text-white mb-4">Face ID Login</h3>
                 
-                <div className="w-full max-w-xs mx-auto aspect-video bg-slate-900 rounded-lg overflow-hidden relative border-2 border-slate-700 shadow-lg">
-                    <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
+                <div className="w-full max-w-xs mx-auto aspect-video bg-gray-900 rounded-lg overflow-hidden relative border border-gray-700 shadow-lg">
+                    <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover transform -scale-x-100" />
                     <canvas ref={canvasRef} className="hidden" />
                     
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -143,7 +145,7 @@ export const FaceLogin: React.FC<FaceLoginProps> = ({ onLoginSuccess, onCancel, 
                     <button
                         onClick={handleCaptureAndVerify}
                         disabled={status !== 'READY' || !stream}
-                        className="w-full max-w-xs mx-auto px-6 py-3 rounded-md font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 active:translate-y-0.5 flex items-center justify-center shadow-lg disabled:opacity-50"
+                        className="w-full max-w-xs mx-auto px-6 py-3 rounded-lg font-semibold text-white bg-blue-600 hover:bg-blue-500 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-blue-500 flex items-center justify-center shadow-lg disabled:opacity-50"
                     >
                         <CameraIcon className="w-5 h-5 mr-2" />
                         Scan Face for Login

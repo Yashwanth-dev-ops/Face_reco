@@ -1,9 +1,13 @@
+
+
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { detectFacesAndHands } from './services/geminiService';
 import { exportAttendanceToCSV } from './services/csvExportService';
 import * as apiService from './services/apiService';
+import * as emailService from './services/emailService';
 import { MarkUpdate } from './services/apiService';
-import { DetectionResult, FaceResult, BoundingBox, StudentInfo, AdminInfo, AttendanceRecord, Emotion, Year, Designation } from './types';
+// Fix: Import MediaSettingsRange for camera focus capabilities.
+import { DetectionResult, FaceResult, BoundingBox, StudentInfo, AdminInfo, AttendanceRecord, Emotion, Year, Designation, PasswordResetToken, SimulatedEmail, Theme, MediaSettingsRange, TimeTableEntry, LeaveRecord, Conversation, Holiday, StudyGroup, SharedNote, AttendanceAnomaly, GroupTask, Notification, Toast, GroupEvent, KnowledgeDocument } from './types';
 import { CameraIcon } from './components/CameraIcon';
 import { DetectionOverlay } from './components/DetectionOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -11,13 +15,26 @@ import { DetectionSummary } from './components/DetectionSummary';
 import { RegistrationModal } from './components/RegistrationModal';
 import { LoginScreen } from './components/LoginScreen';
 import { AdminDashboard } from './components/AdminDashboard';
+import { TeacherDashboard } from './components/TeacherDashboard';
+// Fix: Update import for StudentDashboard to use the barrel file, which resolves the module resolution error.
+import { StudentDashboard } from './StudentDashboard';
+import { VerificationScreen } from './components/VerificationScreen';
+import { ForgotPasswordScreen } from './components/ForgotPasswordScreen';
+import { ResetPasswordScreen } from './components/ResetPasswordScreen';
+import { MockInbox } from './components/MockInbox';
+import { SettingsScreen } from './components/SettingsScreen';
+import { OnboardingScreen } from './components/OnboardingScreen';
+import { BlockedScreen } from './components/BlockedScreen';
+import { FocusControls } from './components/FocusControls';
 import { StudentRegistrationScreen } from './components/StudentRegistrationScreen';
 import { AdminRegistrationScreen } from './components/AdminRegistrationScreen';
-import { TeacherDashboard } from './components/TeacherDashboard';
-import { StudentDashboard } from './components/StudentDashboard';
+import { HolidayManagementScreen } from './components/HolidayManagementPanel';
+import { AIChatbot } from './components/AIChatbot';
+import { ToastContainer } from './components/ToastContainer';
+import { RAGKnowledgeBasePanel } from './components/RAGKnowledgeBasePanel';
 
 
-type View = 'LOGIN' | 'STUDENT_REGISTRATION' | 'ADMIN_REGISTRATION' | 'ADMIN_DASHBOARD' | 'TEACHER_DASHBOARD' | 'STUDENT_DASHBOARD' | 'ANALYZER';
+type View = 'LOGIN' | 'STUDENT_REGISTRATION' | 'ADMIN_REGISTRATION' | 'ADMIN_DASHBOARD' | 'TEACHER_DASHBOARD' | 'STUDENT_DASHBOARD' | 'ANALYZER' | 'VERIFY_ACCOUNT' | 'FORGOT_PASSWORD' | 'RESET_PASSWORD' | 'SETTINGS' | 'ONBOARDING' | 'BLOCKED' | 'HOLIDAY_MANAGEMENT';
 type CurrentUser = (AdminInfo & { userType: 'ADMIN' }) | (StudentInfo & { userType: 'STUDENT' });
 type TrackedFace = {
     boundingBox: BoundingBox;
@@ -25,6 +42,25 @@ type TrackedFace = {
     lastSeen: number;
     geminiId: string;
     consecutiveMisses: number;
+};
+type UserToVerify = {
+    identifier: string; // rollNumber or idNumber
+    userType: 'STUDENT' | 'ADMIN';
+}
+type UserToResetPassword = {
+    identifier: string; // email
+    token: string;
+}
+type BlockedInfo = {
+    adminName: string;
+    expiresAt: number | null;
+}
+type FocusCapabilities = {
+    focusMode?: string[];
+    focusDistance?: MediaSettingsRange;
+};
+type AnalyzerContext = {
+    subject: string;
 };
 
 const calculateIoU = (boxA: BoundingBox, boxB: BoundingBox): number => {
@@ -41,6 +77,13 @@ const calculateIoU = (boxA: BoundingBox, boxB: BoundingBox): number => {
     return isNaN(iou) ? 0 : iou;
 };
 
+const handleMouseMove = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    e.currentTarget.style.setProperty('--x', `${x}px`);
+    e.currentTarget.style.setProperty('--y', `${y}px`);
+};
 
 const App: React.FC = () => {
     // App state
@@ -53,7 +96,21 @@ const App: React.FC = () => {
     const [videoDimensions, setVideoDimensions] = useState({ width: 0, height: 0 });
     const [isPausedForRateLimit, setIsPausedForRateLimit] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
-    
+    const [userToVerify, setUserToVerify] = useState<UserToVerify | null>(null);
+    const [userToResetPassword, setUserToResetPassword] = useState<UserToResetPassword | null>(null);
+    const [simulatedEmails, setSimulatedEmails] = useState<SimulatedEmail[]>([]);
+    const [theme, setTheme] = useState<Theme>('dark');
+    const [blockedInfo, setBlockedInfo] = useState<BlockedInfo | null>(null);
+    const [analyzerContext, setAnalyzerContext] = useState<AnalyzerContext | null>(null);
+    const [notifications, setNotifications] = useState<Notification[]>([]);
+    const [toasts, setToasts] = useState<Toast[]>([]);
+
+    // Camera Focus State
+    const [focusCapabilities, setFocusCapabilities] = useState<FocusCapabilities | null>(null);
+    const [isAutoFocus, setIsAutoFocus] = useState(true);
+    const [manualFocusValue, setManualFocusValue] = useState(0);
+    const [focusPoint, setFocusPoint] = useState<{ x: number; y: number; focusing: boolean } | null>(null);
+
     // Data state
     const [studentDirectory, setStudentDirectory] = useState<Map<string, StudentInfo>>(new Map());
     const [adminDirectory, setAdminDirectory] = useState<Map<string, AdminInfo>>(new Map());
@@ -61,6 +118,12 @@ const App: React.FC = () => {
     const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
     const [departments, setDepartments] = useState<string[]>([]);
     const [registrationTarget, setRegistrationTarget] = useState<FaceResult | null>(null);
+    const [timeTable, setTimeTable] = useState<TimeTableEntry[]>([]);
+    const [leaveRecords, setLeaveRecords] = useState<LeaveRecord[]>([]);
+    const [conversations, setConversations] = useState<Conversation[]>([]);
+    const [holidays, setHolidays] = useState<Holiday[]>([]);
+    const [studyGroups, setStudyGroups] = useState<StudyGroup[]>([]);
+    const [sharedNotes, setSharedNotes] = useState<SharedNote[]>([]);
     const lastAttendanceLogRef = useRef<Map<number, number>>(new Map());
 
     // Refs
@@ -75,23 +138,89 @@ const App: React.FC = () => {
     const RATE_LIMIT_PAUSE_MS = 61000;
     const ATTENDANCE_LOG_INTERVAL_MS = 5 * 60 * 1000;
 
-    // Load all data from API service on initial render
+    // Toast management functions
+    const addToast = (toast: Omit<Toast, 'id'>) => {
+        const id = `toast-${Date.now()}-${Math.random()}`;
+        setToasts(prev => [...prev, { id, ...toast }]);
+    };
+
+    const removeToast = (id: string) => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+    };
+    
+    // Set up email listener
+    useEffect(() => {
+        emailService.setEmailListener((email) => {
+            // Add new email to the top, and keep only the last 5
+            setSimulatedEmails(prev => [email, ...prev.slice(0, 4)]);
+        });
+
+        // Set up notification listener for real-time updates and toasts
+        apiService.setNotificationListener((notification) => {
+             const currentUserId = currentUser 
+                ? (currentUser.userType === 'STUDENT' ? currentUser.rollNumber : currentUser.idNumber)
+                : null;
+            
+            // Only process notifications intended for the current user
+            if (notification.recipientId === currentUserId) {
+                // Show a toast if the notification is not from themselves
+                if (notification.senderId !== currentUserId) {
+                    addToast({
+                        title: notification.title,
+                        message: notification.message,
+                        type: 'info',
+                    });
+                }
+                // Add the new notification to the state
+                setNotifications(prev => [notification, ...prev].sort((a,b) => b.timestamp - a.timestamp));
+            }
+        });
+    }, [currentUser]);
+    
+     // Apply theme and load from storage
+    useEffect(() => {
+        const storedTheme = localStorage.getItem('theme') as Theme | null;
+        if (storedTheme) {
+            setTheme(storedTheme);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+        localStorage.setItem('theme', theme);
+    }, [theme]);
+
+    // Load all static data from API service on initial render
     useEffect(() => {
         const loadInitialData = async () => {
             setIsLoading(true);
             try {
-                const [students, admins, links, attend, depts] = await Promise.all([
+                const [students, admins, links, attend, depts, tt, leaves, hols, groups, notes] = await Promise.all([
                     apiService.getStudentDirectory(),
                     apiService.getAdminDirectory(),
                     apiService.getFaceLinks(),
                     apiService.getAttendance(),
                     apiService.getDepartments(),
+                    apiService.getTimeTable(),
+                    apiService.getLeaveRecords(),
+                    apiService.getHolidays(),
+                    apiService.getStudyGroups(),
+                    apiService.getSharedNotes(),
                 ]);
                 setStudentDirectory(students);
                 setAdminDirectory(admins);
                 setFaceLinks(links);
                 setAttendance(attend);
                 setDepartments(depts);
+                setTimeTable(tt);
+                setLeaveRecords(leaves);
+                setHolidays(hols);
+                setStudyGroups(groups);
+                setSharedNotes(notes);
             } catch (err) {
                 console.error("Failed to load initial data", err);
                 setError({ title: "Loading Error", message: "Could not load application data." });
@@ -102,17 +231,75 @@ const App: React.FC = () => {
         loadInitialData();
     }, []);
 
-    const handleLogin = (user: CurrentUser) => {
-        setCurrentUser(user);
+    // Load user-specific data (like conversations) when user logs in or out
+    useEffect(() => {
+        const loadUserData = async () => {
+            if (currentUser) {
+                try {
+                    const [convos, notifs] = await Promise.all([
+                        apiService.getConversations(
+                            currentUser.userType === 'STUDENT' ? currentUser.rollNumber : currentUser.idNumber,
+                            currentUser.userType,
+                            currentUser.userType === 'ADMIN' ? currentUser.designation : undefined,
+                            currentUser.userType === 'ADMIN' ? currentUser.department : undefined
+                        ),
+                        apiService.getNotificationsForUser(currentUser)
+                    ]);
+                    setConversations(convos);
+                    setNotifications(notifs);
+                } catch (err) {
+                     console.error("Failed to load user data:", err);
+                     setError({ title: "User Data Error", message: "Could not load your conversations or notifications." });
+                }
+            } else {
+                setConversations([]); // Clear on logout
+                setNotifications([]); // Clear on logout
+            }
+        };
+        loadUserData();
+    }, [currentUser]);
+
+
+    const handleLogin = async (user: CurrentUser) => {
+        let finalUser: CurrentUser = user;
         if (user.userType === 'ADMIN') {
-            if (user.designation === Designation.Teacher) {
+            try {
+                const { updatedAdmin, updatedTimeTable } = await apiService.resetAdminPresenceOnLogin(user.idNumber);
+                finalUser = { ...updatedAdmin, userType: 'ADMIN' };
+                setAdminDirectory(prev => new Map(prev).set(updatedAdmin.idNumber, updatedAdmin));
+                setTimeTable(updatedTimeTable);
+            } catch (err) {
+                console.error("Failed to reset admin presence on login:", err);
+                // Fallback to original user if reset fails
+            }
+        }
+    
+        setCurrentUser(finalUser); // Set user state here for both types
+    
+        if (finalUser.userType === 'ADMIN') {
+            if (finalUser.designation === Designation.Teacher || finalUser.designation === Designation.Incharge) {
                 setView('TEACHER_DASHBOARD');
             } else {
                 setView('ADMIN_DASHBOARD');
             }
-        } else {
-            setView('STUDENT_DASHBOARD');
+        } else { // Student
+             if (!(finalUser as StudentInfo).onboarded) {
+                setView('ONBOARDING');
+            } else {
+                setView('STUDENT_DASHBOARD');
+            }
         }
+    };
+
+    const handleBlockedLogin = async (blockDetails: { blockedBy: string | null; expiresAt: number | null }) => {
+        const admin = blockDetails.blockedBy ? adminDirectory.get(blockDetails.blockedBy) : null;
+        const adminName = admin ? `${admin.name} (${admin.designation})` : 'an Administrator';
+        
+        setBlockedInfo({
+            adminName: adminName,
+            expiresAt: blockDetails.expiresAt,
+        });
+        setView('BLOCKED');
     };
     
     const handleLogout = () => {
@@ -121,17 +308,111 @@ const App: React.FC = () => {
         setView('LOGIN');
     };
     
-    const handleStudentRegister = async (student: StudentInfo) => {
+    const handleStudentRegister = async (student: Omit<StudentInfo, 'blockExpiresAt' | 'isVerified' | 'blockedBy' | 'onboarded' | 'marks' | 'predictions'>): Promise<void> => {
         const newStudent = await apiService.registerStudent(student);
         setStudentDirectory(prev => new Map(prev).set(newStudent.rollNumber, newStudent));
-        setView('LOGIN');
+        setUserToVerify({
+            identifier: newStudent.rollNumber,
+            userType: 'STUDENT',
+        });
+        setView('VERIFY_ACCOUNT');
+    };
+    
+    const handleBulkRegister = async (studentsData: Omit<StudentInfo, 'blockExpiresAt' | 'isVerified' | 'password' | 'blockedBy' | 'onboarded' | 'marks' | 'predictions'>[], adminId: string) => {
+        const result = await apiService.registerStudentsBulk(studentsData, adminId);
+        
+        if (result.successful.length > 0) {
+            setStudentDirectory(prev => {
+                const newDirectory = new Map(prev);
+                result.successful.forEach(student => {
+                    newDirectory.set(student.rollNumber, student);
+                });
+                return newDirectory;
+            });
+        }
+        
+        return result; // Pass the full result back to the component
     };
 
-    const handleAdminRegister = async (admin: AdminInfo) => {
+    const handleAdminRegister = async (admin: Omit<AdminInfo, 'isVerified' | 'isBlocked'>): Promise<void> => {
         const { newAdmin, updatedDepartments } = await apiService.registerAdmin(admin);
         setAdminDirectory(prev => new Map(prev).set(newAdmin.idNumber, newAdmin));
         setDepartments(updatedDepartments);
+        setUserToVerify({
+            identifier: newAdmin.idNumber,
+            userType: 'ADMIN',
+        });
+        setView('VERIFY_ACCOUNT');
+    };
+    
+    const handleRequestPasswordReset = async (email: string): Promise<void> => {
+        const resetToken: PasswordResetToken = await apiService.requestPasswordReset(email);
+        setUserToResetPassword({
+            identifier: email,
+            token: resetToken.token,
+        });
+        setView('RESET_PASSWORD');
+    };
+    
+    const handleResetPassword = async (newPassword: string): Promise<void> => {
+        if (!userToResetPassword) {
+            throw new Error("No password reset process is active.");
+        }
+        await apiService.resetPassword(userToResetPassword.token, newPassword);
+        // On success, reset state and go to login
+        setUserToResetPassword(null);
         setView('LOGIN');
+    };
+
+    const handleChangePassword = async (currentPassword: string, newPassword: string): Promise<void> => {
+        if (!currentUser) throw new Error("No user is logged in.");
+
+        const { updatedUser, userType } = await apiService.changePassword(
+            currentUser.userType === 'ADMIN' ? currentUser.idNumber : currentUser.rollNumber,
+            currentUser.userType,
+            currentPassword,
+            newPassword
+        );
+        
+        if (userType === 'ADMIN') {
+            setAdminDirectory(prev => new Map(prev).set((updatedUser as AdminInfo).idNumber, updatedUser as AdminInfo));
+            setCurrentUser({ ...(updatedUser as AdminInfo), userType });
+        } else {
+            setStudentDirectory(prev => new Map(prev).set((updatedUser as StudentInfo).rollNumber, updatedUser as StudentInfo));
+            setCurrentUser({ ...(updatedUser as StudentInfo), userType });
+        }
+    };
+    
+    const handleDeleteSelf = async (password: string): Promise<void> => {
+        if (!currentUser) throw new Error("No user is logged in.");
+        
+        const { updatedStudents, updatedAdmins, updatedFaceLinks, updatedAttendance } = await apiService.deleteSelf(
+            currentUser.userType === 'ADMIN' ? currentUser.idNumber : currentUser.rollNumber,
+            currentUser.userType,
+            password
+        );
+        
+        setStudentDirectory(updatedStudents);
+        setAdminDirectory(updatedAdmins);
+        setFaceLinks(updatedFaceLinks);
+        setAttendance(updatedAttendance);
+        
+        handleLogout();
+    };
+
+    const handleCompleteStudentOnboarding = async (photoBase64: string, newPassword: string): Promise<void> => {
+        if (currentUser?.userType !== 'STUDENT') throw new Error("No student is logged in for onboarding.");
+        
+        const updatedStudent = await apiService.completeStudentOnboarding(currentUser.rollNumber, photoBase64, newPassword);
+        
+        setStudentDirectory(prev => new Map(prev).set(updatedStudent.rollNumber, updatedStudent));
+        setCurrentUser({ ...updatedStudent, userType: 'STUDENT' });
+        setView('STUDENT_DASHBOARD');
+    };
+
+    const handleStartAnalyzerWithContext = (subject: string) => {
+        setAnalyzerContext({ subject });
+        setView('ANALYZER');
     };
 
     const handleStartCamera = async () => {
@@ -146,7 +427,6 @@ const App: React.FC = () => {
                 return;
             }
 
-            // Check permissions API if available
             if (navigator.permissions && navigator.permissions.query) {
                 const permission = await navigator.permissions.query({ name: 'camera' as PermissionName });
                 if (permission.state === 'denied') {
@@ -164,6 +444,27 @@ const App: React.FC = () => {
             });
             setStream(mediaStream);
             if (videoRef.current) videoRef.current.srcObject = mediaStream;
+
+            // Check for focus capabilities
+            const track = mediaStream.getVideoTracks()[0];
+            if ('getCapabilities' in track) {
+                const capabilities = track.getCapabilities();
+                // FIX: Cast focusMode and focusDistance to their expected types, as they are experimental and may not be fully typed.
+                if ('focusMode' in capabilities && 'focusDistance' in capabilities && capabilities.focusDistance) {
+                    const focusMode = capabilities.focusMode as string[];
+                    const focusDistance = capabilities.focusDistance as MediaSettingsRange;
+                    setFocusCapabilities({
+                        focusMode: focusMode,
+                        focusDistance: focusDistance,
+                    });
+                    setManualFocusValue((focusDistance.min + focusDistance.max) / 2);
+                    if (focusMode?.includes('continuous')) {
+                        // FIX: Use 'as any' to apply the experimental focusMode constraint which is not in the standard MediaTrackConstraintSet type.
+                        track.applyConstraints({ advanced: [{ focusMode: 'continuous' } as any] });
+                    }
+                }
+            }
+
         } catch (err) {
             console.error("Error accessing camera:", err);
             let title = "Camera Error";
@@ -192,6 +493,9 @@ const App: React.FC = () => {
             setVideoDimensions({ width: 0, height: 0 });
             trackedFacesRef.current.clear();
             setIsPausedForRateLimit(false);
+            setFocusCapabilities(null);
+            setFocusPoint(null);
+            setAnalyzerContext(null); // Clear context on stop
         }
     };
     
@@ -220,17 +524,55 @@ const App: React.FC = () => {
         setFaceLinks(updatedFaceLinks);
         setAttendance(updatedAttendance);
     };
-    
-    const handleToggleBlockStudent = async (rollNumber: string) => {
+
+    const handleDeleteStudents = async (rollNumbers: string[]) => {
         if (currentUser?.userType !== 'ADMIN') return;
-        const updatedStudent = await apiService.toggleStudentBlock(rollNumber, currentUser.idNumber);
+        const { updatedStudents, updatedFaceLinks, updatedAttendance } = await apiService.deleteStudents(rollNumbers, currentUser.idNumber);
+        setStudentDirectory(updatedStudents);
+        setFaceLinks(updatedFaceLinks);
+        setAttendance(updatedAttendance);
+    };
+    
+    const handleBlockStudent = async (rollNumber: string, durationMs: number | 'PERMANENT') => {
+        if (currentUser?.userType !== 'ADMIN') return;
+        const updatedStudent = await apiService.blockStudent(rollNumber, currentUser.idNumber, durationMs);
         setStudentDirectory(prev => new Map(prev).set(rollNumber, updatedStudent));
+    };
+
+    const handleBlockStudents = async (rollNumbers: string[], durationMs: number | 'PERMANENT') => {
+        if (currentUser?.userType !== 'ADMIN') return;
+        const updatedStudents = await apiService.blockStudents(rollNumbers, currentUser.idNumber, durationMs);
+        setStudentDirectory(updatedStudents);
+    };
+
+    const handleUnblockStudent = async (rollNumber: string) => {
+        if (currentUser?.userType !== 'ADMIN') return;
+        const updatedStudent = await apiService.unblockStudent(rollNumber, currentUser.idNumber);
+        setStudentDirectory(prev => new Map(prev).set(rollNumber, updatedStudent));
+    };
+
+    const handleUnblockStudents = async (rollNumbers: string[]) => {
+        if (currentUser?.userType !== 'ADMIN') return;
+        const updatedStudents = await apiService.unblockStudents(rollNumbers, currentUser.idNumber);
+        setStudentDirectory(updatedStudents);
     };
     
     const handleDeleteAdmin = async (idNumber: string) => {
         if (currentUser?.userType !== 'ADMIN') return;
         try {
             const updatedAdmins = await apiService.deleteAdmin(idNumber, currentUser.idNumber);
+            setAdminDirectory(updatedAdmins);
+        } catch (err) {
+            console.error(err);
+            const message = err instanceof Error ? err.message : "An unknown error occurred.";
+            setError({ title: "Action Failed", message });
+        }
+    };
+
+    const handleDeleteAdmins = async (idNumbers: string[]) => {
+        if (currentUser?.userType !== 'ADMIN') return;
+        try {
+            const updatedAdmins = await apiService.deleteAdmins(idNumbers, currentUser.idNumber);
             setAdminDirectory(updatedAdmins);
         } catch (err) {
             console.error(err);
@@ -251,6 +593,35 @@ const App: React.FC = () => {
         }
     };
 
+    const handleToggleAdminsBlock = async (idNumbers: string[], block: boolean) => {
+        if (currentUser?.userType !== 'ADMIN') return;
+        try {
+            const updatedAdmins = await apiService.toggleAdminsBlock(idNumbers, currentUser.idNumber, block);
+            setAdminDirectory(updatedAdmins);
+        } catch (err) {
+            console.error(err);
+            const message = err instanceof Error ? err.message : "An unknown error occurred.";
+            setError({ title: "Action Failed", message });
+        }
+    };
+
+    const handleToggleAdminPresence = async (adminId: string) => {
+        if (currentUser?.userType !== 'ADMIN') return;
+        try {
+            const { updatedAdmin, updatedTimeTable } = await apiService.toggleAdminPresence(adminId, currentUser.idNumber);
+            setAdminDirectory(prev => new Map(prev).set(adminId, updatedAdmin));
+            setTimeTable(updatedTimeTable);
+            // Also update currentUser if they are toggling their own presence
+            if(currentUser.idNumber === adminId){
+                setCurrentUser(prev => prev ? ({ ...prev, ...updatedAdmin }) : null);
+            }
+        } catch (err) {
+            console.error(err);
+            const message = err instanceof Error ? err.message : "An unknown error occurred.";
+            setError({ title: "Action Failed", message });
+        }
+    };
+
     const handleAddDepartment = async (name: string) => {
         if (name && !departments.includes(name)) {
             const newDepartments = await apiService.addDepartment(name);
@@ -260,8 +631,14 @@ const App: React.FC = () => {
     
     const handleDownload = (filteredAttendance: AttendanceRecord[]) => exportAttendanceToCSV(filteredAttendance, faceLinks, studentDirectory);
 
-    const handleLogAttendance = async (persistentId: number, emotion: Emotion) => {
-        const newAttendance = await apiService.logAttendance(persistentId, emotion);
+    const handleLogAttendance = async (persistentId: number, emotion: Emotion, subject?: string) => {
+        const newAttendance = await apiService.logAttendance(persistentId, emotion, subject);
+        setAttendance(newAttendance);
+    };
+
+    const handleSetManualAttendance = async (studentRollNumber: string, subject: string, status: 'present' | 'absent') => {
+        if (currentUser?.userType !== 'ADMIN') return;
+        const newAttendance = await apiService.setManualAttendance(studentRollNumber, subject, new Date(), status, currentUser.idNumber);
         setAttendance(newAttendance);
     };
 
@@ -271,358 +648,545 @@ const App: React.FC = () => {
         setStudentDirectory(updatedStudents);
     };
 
-    const handleLogAction = (action: string, details: string) => {
-        if (currentUser?.userType === 'ADMIN') {
-            apiService.logGenericAdminAction(currentUser.idNumber, action, details);
+    const handleUpdateTimeTable = async (entries: TimeTableEntry[]) => {
+        if (currentUser?.userType !== 'ADMIN') return;
+        const updatedTimeTable = await apiService.saveTimeTableEntries(entries, currentUser.idNumber);
+        setTimeTable(updatedTimeTable);
+    };
+
+    const handleUpdateTimetableEntry = async (entry: TimeTableEntry) => {
+        if (currentUser?.userType !== 'ADMIN') return;
+        const updatedTimeTable = await apiService.updateTimeTableEntry(entry, currentUser.idNumber);
+        setTimeTable(updatedTimeTable);
+    };
+
+    const handleLogGenericAction = (action: string, details: string) => {
+        if (currentUser?.userType !== 'ADMIN') return;
+        apiService.logGenericAdminAction(currentUser.idNumber, action, details);
+    };
+
+    const handleRequestLeave = async (startDate: string, endDate: string, reason: string) => {
+        if (!currentUser) return;
+        const id = currentUser.userType === 'ADMIN' ? currentUser.idNumber : currentUser.rollNumber;
+        const updatedLeaveRecords = await apiService.requestLeave(id, startDate, endDate, reason);
+        setLeaveRecords(updatedLeaveRecords);
+    };
+
+    const handleCancelOwnLeave = async (leaveId: string) => {
+        if (!currentUser) return;
+        const id = currentUser.userType === 'ADMIN' ? currentUser.idNumber : currentUser.rollNumber;
+        const updatedLeaveRecords = await apiService.cancelOwnLeave(leaveId, id);
+        setLeaveRecords(updatedLeaveRecords);
+    };
+
+    const handleApproveLeave = async (leaveId: string) => {
+        if (currentUser?.userType !== 'ADMIN') return;
+        const { updatedLeaveRecords, updatedTimeTable } = await apiService.approveLeave(leaveId, currentUser.idNumber);
+        setLeaveRecords(updatedLeaveRecords);
+        setTimeTable(updatedTimeTable);
+    };
+
+    const handleRejectLeave = async (leaveId: string) => {
+        if (currentUser?.userType !== 'ADMIN') return;
+        const updatedLeaveRecords = await apiService.rejectLeave(leaveId, currentUser.idNumber);
+        setLeaveRecords(updatedLeaveRecords);
+    };
+
+    const handleGrantHoliday = async (startDate: string, endDate: string, reason: string) => {
+        if (currentUser?.userType !== 'ADMIN') return;
+        const { updatedHolidays, updatedTimeTable } = await apiService.grantHoliday(startDate, endDate, reason, currentUser.idNumber);
+        setHolidays(updatedHolidays);
+        setTimeTable(updatedTimeTable);
+    };
+
+    const handleCancelHoliday = async (holidayId: string) => {
+        if (currentUser?.userType !== 'ADMIN') return;
+        const { updatedHolidays, updatedTimeTable } = await apiService.cancelHoliday(holidayId, currentUser.idNumber);
+        setHolidays(updatedHolidays);
+        setTimeTable(updatedTimeTable);
+    };
+
+    const handleSendMessage = async (receiverId: string, content: string, file?: { name: string; url: string }, isPriority?: boolean) => {
+        if (!currentUser) throw new Error("No user is logged in.");
+        const senderId = currentUser.userType === 'STUDENT' ? currentUser.rollNumber : currentUser.idNumber;
+        const updatedConversations = await apiService.sendMessage(senderId, receiverId, content, file, isPriority);
+        setConversations(updatedConversations);
+    };
+
+    // --- Notification Handlers ---
+    const handleMarkNotificationAsRead = async (notificationId: string) => {
+        await apiService.markNotificationAsRead(notificationId);
+        setNotifications(prev => prev.map(n => n.id === notificationId ? { ...n, isRead: true } : n));
+    };
+
+    const handleMarkAllNotificationsAsRead = async () => {
+        const unreadIds = notifications.filter(n => !n.isRead).map(n => n.id);
+        if (unreadIds.length > 0) {
+            await apiService.markAllNotificationsAsRead(unreadIds);
+            setNotifications(prev => prev.map(n => 
+                !n.isRead ? { ...n, isRead: true } : n
+            ));
+        }
+    };
+
+    const handleSendBroadcast = async (target: string, title: string, message: string) => {
+        if (!currentUser || currentUser.userType !== 'ADMIN') {
+            throw new Error("User is not an authorized admin.");
+        }
+        try {
+            await apiService.sendBroadcast(currentUser.idNumber, target, title, message);
+            addToast({ title: "Success", message: "Broadcast sent successfully!", type: 'success' });
+        } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
+            addToast({ title: 'Broadcast Failed', message: errorMessage, type: 'error' });
+            throw err; // Re-throw so modal can catch it
         }
     };
     
+    // --- Community Feature Handlers ---
+    const handleDeleteStudyGroup = async (groupId: string) => {
+        if (currentUser?.userType !== 'ADMIN') return;
+        const { updatedGroups, updatedStudents } = await apiService.deleteStudyGroup(groupId, currentUser.idNumber);
+        setStudyGroups(updatedGroups);
+        setStudentDirectory(updatedStudents);
+    };
+
+    const handleCreateStudyGroup = async (groupData: Omit<StudyGroup, 'id' | 'events' | 'messages'>) => {
+        const { newGroup, updatedStudents } = await apiService.createStudyGroup(groupData);
+        setStudyGroups(prev => [...prev, newGroup]);
+        setStudentDirectory(updatedStudents);
+        if(currentUser?.userType === 'STUDENT'){
+            setCurrentUser(prev => ({...prev!, ...updatedStudents.get(currentUser.rollNumber)}));
+        }
+    };
+    
+    const handleJoinStudyGroup = async (groupId: string) => {
+        if (currentUser?.userType !== 'STUDENT') return;
+        const { updatedGroup, updatedStudent } = await apiService.joinStudyGroup(groupId, currentUser.rollNumber);
+        setStudyGroups(prev => prev.map(g => g.id === groupId ? updatedGroup : g));
+        setStudentDirectory(prev => new Map(prev).set(updatedStudent.rollNumber, updatedStudent));
+        setCurrentUser(prev => ({...prev!, ...updatedStudent}));
+    };
+
+    const handleDeclineStudyGroupInvitation = async (groupId: string) => {
+        if (currentUser?.userType !== 'STUDENT') return;
+        const { updatedGroup } = await apiService.declineStudyGroupInvitation(groupId, currentUser.rollNumber);
+        setStudyGroups(prev => prev.map(g => g.id === groupId ? updatedGroup : g));
+    };
+    
+    const handleSendGroupMessage = async (groupId: string, content: string, file?: { name: string; url: string }, audio?: { url: string; duration: number }, replyToMessageId?: string) => {
+        if (currentUser?.userType !== 'STUDENT' && currentUser?.userType !== 'ADMIN') return;
+        const senderId = currentUser.userType === 'STUDENT' ? currentUser.rollNumber : currentUser.idNumber;
+        const updatedGroup = await apiService.sendGroupMessage(groupId, senderId, content, file, audio, replyToMessageId);
+        setStudyGroups(prev => prev.map(g => g.id === groupId ? updatedGroup : g));
+    };
+
+    const handleDeleteGroupMessage = async (groupId: string, messageId: string, deleteType: 'me' | 'everyone') => {
+        if (!currentUser) return;
+        const requestorId = currentUser.userType === 'STUDENT' ? currentUser.rollNumber : currentUser.idNumber;
+        try {
+            const updatedGroup = await apiService.deleteGroupMessage(groupId, messageId, requestorId, deleteType);
+            setStudyGroups(prev => prev.map(g => g.id === groupId ? updatedGroup : g));
+        } catch (err) {
+            console.error(err);
+            const message = err instanceof Error ? err.message : "Could not delete message.";
+            setError({ title: "Action Failed", message });
+        }
+    };
+
+    const handleDeleteGroupResource = async (groupId: string, resourceId: string) => {
+        if (!currentUser) return;
+        const userId = currentUser.userType === 'STUDENT' ? currentUser.rollNumber : currentUser.idNumber;
+        const updatedGroup = await apiService.deleteGroupResource(groupId, resourceId, userId);
+        setStudyGroups(prev => prev.map(g => g.id === groupId ? updatedGroup : g));
+    };
+
+    const handleUploadNote = async (noteData: Omit<SharedNote, 'id' | 'ratings' | 'createdAt'>) => {
+        const newNote = await apiService.uploadNote(noteData);
+        setSharedNotes(prev => [newNote, ...prev]);
+    };
+
+    const handleRateNote = async (noteId: string, rating: number) => {
+        if (currentUser?.userType !== 'STUDENT') return;
+        const updatedNote = await apiService.rateNote(noteId, rating, currentUser.rollNumber);
+        setSharedNotes(prev => prev.map(n => n.id === noteId ? updatedNote : n));
+    };
+
+    const handleSuggestStudyTime = async (groupId: string): Promise<{ dayOfWeek: number, startTime: string, reason: string }[]> => {
+        return await apiService.suggestStudyTime(groupId);
+    };
+
+    const handleSummarizeNote = async (noteId: string): Promise<string> => {
+        return await apiService.summarizeNote(noteId);
+    };
+
+    // --- New Group Management Handlers ---
+    const handlePinMessage = async (groupId: string, messageId: string) => {
+        if (currentUser?.userType !== 'STUDENT') return;
+        const updatedGroup = await apiService.pinMessage(groupId, messageId, currentUser.rollNumber);
+        setStudyGroups(prev => prev.map(g => g.id === groupId ? updatedGroup : g));
+    };
+    
+    const handleAddTask = async (groupId: string, task: Omit<GroupTask, 'id' | 'completed'>) => {
+        if (currentUser?.userType !== 'STUDENT') return;
+        const updatedGroup = await apiService.addTask(groupId, task, currentUser.rollNumber);
+        setStudyGroups(prev => prev.map(g => g.id === groupId ? updatedGroup : g));
+    };
+    
+    const handleToggleTask = async (groupId: string, taskId: string) => {
+        if (currentUser?.userType !== 'STUDENT') return;
+        const updatedGroup = await apiService.toggleTask(groupId, taskId, currentUser.rollNumber);
+        setStudyGroups(prev => prev.map(g => g.id === groupId ? updatedGroup : g));
+    };
+
+    const handleDeleteStudyGroupByStudent = async (groupId: string) => {
+        if (currentUser?.userType !== 'STUDENT') return;
+        const { updatedGroups, updatedStudents } = await apiService.deleteStudyGroupByStudent(groupId, currentUser.rollNumber);
+        setStudyGroups(updatedGroups);
+        setStudentDirectory(updatedStudents);
+        // Important: Update the current user's state to reflect removal from the group
+        setCurrentUser(prev => ({...prev!, ...updatedStudents.get(currentUser.rollNumber)}));
+    };
+
+    const handleAddMemberToGroup = async (groupId: string, studentRollNumber: string) => {
+        if (currentUser?.userType !== 'STUDENT') return;
+        const { updatedGroup, updatedStudentDirectory } = await apiService.addMemberToStudyGroup(groupId, studentRollNumber, currentUser.rollNumber);
+        setStudyGroups(prev => prev.map(g => g.id === groupId ? updatedGroup : g));
+        setStudentDirectory(updatedStudentDirectory);
+    };
+
+    const handleScheduleGroupEvent = async (groupId: string, eventData: Omit<GroupEvent, 'id'>) => {
+        if (currentUser?.userType !== 'STUDENT') return;
+        const updatedGroup = await apiService.scheduleGroupEvent(groupId, eventData, currentUser.rollNumber);
+        setStudyGroups(prev => prev.map(g => g.id === groupId ? updatedGroup : g));
+    };
+    
+    const handleDeleteGroupEvent = async (groupId: string, eventId: string) => {
+        if (currentUser?.userType !== 'STUDENT') return;
+        const updatedGroup = await apiService.deleteGroupEvent(groupId, eventId, currentUser.rollNumber);
+        setStudyGroups(prev => prev.map(g => g.id === groupId ? updatedGroup : g));
+    };
+
+    // Fix: Add handlers for prediction feature
+    const handlePlacePrediction = async (subject: string, midTerm: 'mid1' | 'mid2', predictedMarks: number) => {
+        if (currentUser?.userType !== 'STUDENT') return;
+        const updatedStudent = await apiService.placePrediction(currentUser.rollNumber, subject, midTerm, predictedMarks);
+        setStudentDirectory(prev => new Map(prev).set(updatedStudent.rollNumber, updatedStudent));
+        setCurrentUser({ ...updatedStudent, userType: 'STUDENT' });
+    };
+
+    const handleClaimReward = async (subject: string, midTerm: 'mid1' | 'mid2') => {
+        if (currentUser?.userType !== 'STUDENT') return;
+        try {
+            const updatedStudent = await apiService.claimReward(currentUser.rollNumber, subject, midTerm);
+            setStudentDirectory(prev => new Map(prev).set(updatedStudent.rollNumber, updatedStudent));
+            setCurrentUser({ ...updatedStudent, userType: 'STUDENT' });
+        } catch(err) {
+            console.error("Failed to claim reward:", err);
+            setError({ title: "Action Failed", message: err instanceof Error ? err.message : "Could not claim reward." });
+        }
+    };
+
+
+    // --- AI Insights Handler ---
+    const handleGetAttendanceAnomalies = async (studentsToAnalyze: StudentInfo[]): Promise<AttendanceAnomaly[]> => {
+        return await apiService.getAttendanceAnomalies(studentsToAnalyze, attendance, faceLinks);
+    };
+
+    // --- RAG Handler ---
+    const handleQueryKnowledgeBase = async (query: string): Promise<{ answer: string; sources: KnowledgeDocument[] }> => {
+        return await apiService.queryKnowledgeBase(query);
+    };
+
+
     const captureAndAnalyze = useCallback(async () => {
-        if (isProcessing.current || !videoRef.current || !canvasRef.current || !stream) return;
-
-        isProcessing.current = true;
-        
-        const video = videoRef.current;
-        const canvas = canvasRef.current;
-        const context = canvas.getContext('2d');
-
-        if (video.videoWidth === 0 || !context) {
-            isProcessing.current = false;
+        if (!videoRef.current || !canvasRef.current || isProcessing.current || isPausedForRateLimit) {
             return;
         }
 
+        isProcessing.current = true;
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
+        const context = canvas.getContext('2d');
+        if (!context || video.videoWidth === 0) {
+            isProcessing.current = false;
+            return;
+        }
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-            
+        const base64ImageData = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+        
         try {
-            const result = await detectFacesAndHands(base64Data);
-            const newDetections = result.faces;
-            const currentTime = Date.now();
+            const result = await detectFacesAndHands(base64ImageData);
+            setError(null);
+            setIsApiError(false);
             
-            // --- New Tracking Logic ---
-            const IOU_THRESHOLD = 0.3;
-            const MAX_CONSECUTIVE_MISSES = 5;
-            const VELOCITY_UPDATE_ALPHA = 0.5;
+            const now = Date.now();
+            const trackedFaces = trackedFacesRef.current;
+            const newTrackedFaces = new Map<number, TrackedFace>();
+            
+            const matchedGeminiIds = new Set<string>();
 
-            // 1. Predict next location for existing tracks
-            const predictions = new Map<number, BoundingBox>();
-            trackedFacesRef.current.forEach((trackData, trackId) => {
-                const { boundingBox: box, velocity } = trackData;
-                const centerX = box.x + box.width / 2;
-                const centerY = box.y + box.height / 2;
-                const predictedCenterX = centerX + velocity.x;
-                const predictedCenterY = centerY + velocity.y;
-                predictions.set(trackId, {
-                    x: predictedCenterX - box.width / 2,
-                    y: predictedCenterY - box.height / 2,
-                    width: box.width,
-                    height: box.height,
-                });
-            });
+            result.faces.forEach(face => {
+                let bestMatchId: number | null = null;
+                let bestIoU = 0.3; // IoU threshold
 
-            // 2. Create cost matrix and find best matches (greedy approach)
-            const potentialMatches: { trackId: number; detectionIndex: number; iou: number }[] = [];
-            predictions.forEach((predictedBox, trackId) => {
-                newDetections.forEach((detection, detectionIndex) => {
-                    const iou = calculateIoU(predictedBox, detection.boundingBox);
-                    if (iou > IOU_THRESHOLD) {
-                        potentialMatches.push({ trackId, detectionIndex, iou });
+                trackedFaces.forEach((trackedFace, id) => {
+                    const iou = calculateIoU(face.boundingBox, trackedFace.boundingBox);
+                    if (iou > bestIoU) {
+                        bestIoU = iou;
+                        bestMatchId = id;
                     }
                 });
-            });
-            potentialMatches.sort((a, b) => b.iou - a.iou);
 
-            const finalMatches = new Map<number, number>(); // trackId -> detectionIndex
-            const matchedDetections = new Set<number>();
-            for (const match of potentialMatches) {
-                if (!finalMatches.has(match.trackId) && !matchedDetections.has(match.detectionIndex)) {
-                    finalMatches.set(match.trackId, match.detectionIndex);
-                    matchedDetections.add(match.detectionIndex);
-                }
-            }
-            
-            // 3. Update state: update matched, handle misses, create new tracks
-            const newTrackedFaces = new Map<number, TrackedFace>();
-
-            // Update matched tracks
-            finalMatches.forEach((detectionIndex, trackId) => {
-                const oldTrack = trackedFacesRef.current.get(trackId)!;
-                const newDetection = newDetections[detectionIndex];
-                const oldBox = oldTrack.boundingBox;
-                const oldCenterX = oldBox.x + oldBox.width / 2;
-                const oldCenterY = oldBox.y + oldBox.height / 2;
-                const newBox = newDetection.boundingBox;
-                const newCenterX = newBox.x + newBox.width / 2;
-                const newCenterY = newBox.y + newBox.height / 2;
-                const dx = newCenterX - oldCenterX;
-                const dy = newCenterY - oldCenterY;
-                const newVx = VELOCITY_UPDATE_ALPHA * dx + (1 - VELOCITY_UPDATE_ALPHA) * oldTrack.velocity.x;
-                const newVy = VELOCITY_UPDATE_ALPHA * dy + (1 - VELOCITY_UPDATE_ALPHA) * oldTrack.velocity.y;
-
-                newTrackedFaces.set(trackId, {
-                    boundingBox: newBox,
-                    velocity: { x: newVx, y: newVy },
-                    lastSeen: currentTime,
-                    geminiId: newDetection.personId,
-                    consecutiveMisses: 0,
-                });
-                newDetection.persistentId = trackId;
-            });
-            
-            // Handle unmatched tracks (occlusions)
-            trackedFacesRef.current.forEach((trackData, trackId) => {
-                if (!finalMatches.has(trackId)) {
-                    const misses = trackData.consecutiveMisses + 1;
-                    if (misses < MAX_CONSECUTIVE_MISSES) {
-                        const predictedBox = predictions.get(trackId)!;
-                        newTrackedFaces.set(trackId, {
-                            ...trackData,
-                            boundingBox: predictedBox, // Update to predicted position
-                            consecutiveMisses: misses,
-                        });
-                    } // else: track is dropped
-                }
-            });
-
-            // Handle new detections
-            const maxId = Array.from(newTrackedFaces.keys()).reduce((max, id) => Math.max(max, id), 0);
-            nextFaceIdRef.current = Math.max(maxId + 1, nextFaceIdRef.current);
-
-            newDetections.forEach((detection, index) => {
-                if (!matchedDetections.has(index)) {
-                    const newId = nextFaceIdRef.current++;
-                    newTrackedFaces.set(newId, {
-                        boundingBox: detection.boundingBox,
-                        velocity: { x: 0, y: 0 },
-                        lastSeen: currentTime,
-                        geminiId: detection.personId,
+                if (bestMatchId !== null && !matchedGeminiIds.has(trackedFaces.get(bestMatchId)!.geminiId)) {
+                    const oldTrack = trackedFaces.get(bestMatchId)!;
+                    face.persistentId = bestMatchId;
+                    newTrackedFaces.set(bestMatchId, {
+                        ...oldTrack,
+                        boundingBox: face.boundingBox,
+                        lastSeen: now,
                         consecutiveMisses: 0,
                     });
-                    detection.persistentId = newId;
+                    matchedGeminiIds.add(oldTrack.geminiId);
+                    trackedFaces.delete(bestMatchId);
+                } else {
+                    const newId = nextFaceIdRef.current++;
+                    face.persistentId = newId;
+                    newTrackedFaces.set(newId, {
+                        boundingBox: face.boundingBox,
+                        velocity: { x: 0, y: 0 },
+                        lastSeen: now,
+                        geminiId: face.personId,
+                        consecutiveMisses: 0,
+                    });
+                }
+                
+                // Attach student info if linked
+                const rollNumber = faceLinks.get(face.persistentId);
+                if (rollNumber) {
+                    face.studentInfo = studentDirectory.get(rollNumber);
+                }
+            });
+
+            // Handle misses
+            trackedFaces.forEach((trackedFace, id) => {
+                if (now - trackedFace.lastSeen < 3000) { // Keep unmatched faces for a bit
+                     trackedFace.consecutiveMisses++;
+                     if (trackedFace.consecutiveMisses < 3) {
+                        newTrackedFaces.set(id, trackedFace);
+                     }
                 }
             });
             
             trackedFacesRef.current = newTrackedFaces;
-            // --- End of New Tracking Logic ---
-
-            newDetections.forEach(face => {
-                if (face.persistentId) {
-                    const rollNumber = faceLinks.get(face.persistentId);
-                    const studentInfo = rollNumber ? studentDirectory.get(rollNumber) : undefined;
-
-                    if (studentInfo && !studentInfo.isBlocked) {
-                        face.studentInfo = studentInfo;
-                        const lastLog = lastAttendanceLogRef.current.get(face.persistentId);
-                        if (!lastLog || currentTime - lastLog > ATTENDANCE_LOG_INTERVAL_MS) {
-                           
-                            apiService.logAttendance(face.persistentId, face.emotion).then(newAttendance => {
-                                setAttendance(newAttendance);
-                                lastAttendanceLogRef.current.set(face.persistentId!, currentTime);
-                            });
-                        }
+            setDetectionResult(result);
+            
+             // Log attendance
+            result.faces.forEach(face => {
+                if (face.persistentId && face.studentInfo && !face.studentInfo.blockExpiresAt) {
+                    const lastLog = lastAttendanceLogRef.current.get(face.persistentId) || 0;
+                    if (now - lastLog > ATTENDANCE_LOG_INTERVAL_MS) {
+                        handleLogAttendance(face.persistentId, face.emotion, analyzerContext?.subject);
+                        lastAttendanceLogRef.current.set(face.persistentId, now);
                     }
                 }
             });
 
-            setDetectionResult({ ...result, faces: newDetections });
-            if (isApiError) { setError(null); setIsApiError(false); }
-        } catch (apiError) {
-            console.error("API Error:", apiError);
-            if (apiError instanceof Error) {
-                if (apiError.message === "RATE_LIMIT") {
-                    setError({ title: "API Rate Limit Exceeded", message: `Analysis paused. Resuming in ${RATE_LIMIT_PAUSE_MS / 1000}s.` });
-                    setIsApiError(true);
-                    setIsPausedForRateLimit(true);
-                    setTimeout(() => {
-                        if (videoRef.current?.srcObject) {
-                            setIsPausedForRateLimit(false);
-                            setError(null);
-                            setIsApiError(false);
-                        } else {
-                            setIsPausedForRateLimit(false);
-                        }
-                    }, RATE_LIMIT_PAUSE_MS);
-                } else if (apiError.message === "NETWORK_ERROR") {
-                    setError({ title: "Network Connection Issue", message: "Cannot connect to the AI service. Please check your internet connection." });
-                    setIsApiError(true);
-                } else {
-                    setError({ title: "Analysis Failed", message: "Could not analyze the frame. Retrying..." });
-                    setIsApiError(true);
-                }
+        } catch (err) {
+            console.error("Analysis failed:", err);
+            const message = err instanceof Error ? err.message : "An unknown error occurred";
+            if (message === 'RATE_LIMIT') {
+                setIsPausedForRateLimit(true);
+                setTimeout(() => setIsPausedForRateLimit(false), RATE_LIMIT_PAUSE_MS);
+            } else if (message === 'NETWORK_ERROR') {
+                 setError({ title: "Network Error", message: "Cannot connect to the AI service. Please check your connection." });
+                 setIsApiError(true);
             } else {
-                setError({ title: "Unknown Error", message: "An unexpected problem occurred during analysis." });
-                setIsApiError(true);
+                 setError({ title: "API Error", message: "Failed to process the video frame." });
+                 setIsApiError(true);
             }
-            setDetectionResult({ faces: [], hands: [] });
+        } finally {
+            isProcessing.current = false;
         }
-        isProcessing.current = false;
-    }, [stream, isApiError, studentDirectory, faceLinks]);
+    }, [faceLinks, studentDirectory, isPausedForRateLimit, analyzerContext]);
 
     useEffect(() => {
-        if (isPausedForRateLimit) return;
-        let intervalId: number | null = null;
+        let intervalId: number;
         if (stream) {
-            captureAndAnalyze();
             intervalId = window.setInterval(captureAndAnalyze, ANALYSIS_INTERVAL);
         }
-        return () => { if (intervalId) clearInterval(intervalId); };
-    }, [stream, captureAndAnalyze, isPausedForRateLimit]);
-
-    const handleVideoMetadata = () => {
-        if (videoRef.current) setVideoDimensions({ width: videoRef.current.clientWidth, height: videoRef.current.clientHeight });
-    };
-
-    const renderContent = () => {
+        return () => {
+            if (intervalId) {
+                clearInterval(intervalId);
+            }
+        };
+    }, [stream, captureAndAnalyze]);
+    
+     const renderContent = () => {
         if (isLoading) {
             return (
-                <div className="text-center">
-                    <div className="w-16 h-16 border-4 border-t-4 border-gray-200 border-t-blue-500 rounded-full animate-spin mx-auto"></div>
-                    <p className="mt-4 text-lg text-gray-300">Loading University Data...</p>
+                <div className="flex flex-col items-center justify-center h-screen">
+                    <img src="https://krucet.ac.in/wp-content/uploads/2020/09/cropped-kru-150-round-non-transparent-1.png" alt="Krishna University Logo" className="w-24 h-24 mb-4 rounded-full shadow-lg animate-pulse" />
+                    <p className="text-lg text-gray-400">Loading University Data...</p>
                 </div>
             );
         }
 
         switch(view) {
-            case 'LOGIN':
-                return <LoginScreen onLogin={handleLogin} onNavigateToRegister={(type) => setView(type === 'STUDENT' ? 'STUDENT_REGISTRATION' : 'ADMIN_REGISTRATION')} />;
-            case 'STUDENT_REGISTRATION':
-                return <StudentRegistrationScreen departments={departments} onRegister={handleStudentRegister} onBackToLogin={() => setView('LOGIN')} />;
-            case 'ADMIN_REGISTRATION':
-                return <AdminRegistrationScreen departments={departments} onRegister={handleAdminRegister} onBackToLogin={() => setView('LOGIN')} />;
-            case 'ADMIN_DASHBOARD':
-                if (currentUser?.userType === 'ADMIN') {
-                     return <AdminDashboard 
-                                currentUser={currentUser}
-                                studentDirectory={studentDirectory} 
-                                adminDirectory={adminDirectory}
-                                departments={departments}
-                                attendance={attendance}
-                                faceLinks={faceLinks}
-                                onDeleteStudent={handleDeleteStudent}
-                                onToggleBlockStudent={handleToggleBlockStudent}
-                                onDeleteAdmin={handleDeleteAdmin}
-                                onToggleBlockAdmin={handleToggleBlockAdmin}
-                                onLogout={handleLogout}
-                                onDownload={handleDownload}
-                                onUpdateMarks={handleUpdateMarks}
-                                onLogAction={handleLogAction}
-                            />;
-                }
-                handleLogout();
-                return null;
-            case 'TEACHER_DASHBOARD':
-                if (currentUser?.userType === 'ADMIN' && currentUser.designation === Designation.Teacher) {
-                    return <TeacherDashboard
-                        currentUser={currentUser}
-                        studentDirectory={studentDirectory}
-                        adminDirectory={adminDirectory}
-                        attendance={attendance}
-                        faceLinks={faceLinks}
-                        onLogout={handleLogout}
-                        onDownload={handleDownload}
-                        onUpdateMarks={handleUpdateMarks}
-                    />;
-                }
-                handleLogout();
-                return null;
-            case 'STUDENT_DASHBOARD':
+            case 'LOGIN': return <LoginScreen onLogin={handleLogin} onNavigateToRegister={(type) => setView(type === 'ADMIN' ? 'ADMIN_REGISTRATION' : 'STUDENT_REGISTRATION')} onForgotPassword={() => setView('FORGOT_PASSWORD')} onBlockedLogin={handleBlockedLogin} />;
+            case 'STUDENT_REGISTRATION': return <StudentRegistrationScreen departments={departments} onRegisterStudent={handleStudentRegister} onBackToLogin={() => setView('LOGIN')} />;
+            case 'ADMIN_REGISTRATION': return <AdminRegistrationScreen departments={departments} onRegisterAdmin={handleAdminRegister} onBackToLogin={() => setView('LOGIN')} />;
+            case 'ADMIN_DASHBOARD': return currentUser?.userType === 'ADMIN' ? <AdminDashboard currentUser={currentUser} studentDirectory={studentDirectory} adminDirectory={adminDirectory} departments={departments} attendance={attendance} faceLinks={faceLinks} timeTable={timeTable} leaveRecords={leaveRecords} conversations={conversations} studyGroups={studyGroups} onDeleteStudyGroup={handleDeleteStudyGroup} onSendMessage={handleSendMessage} onApproveLeave={handleApproveLeave} onRejectLeave={handleRejectLeave} onUpdateTimeTable={handleUpdateTimeTable} onDeleteStudent={handleDeleteStudent} onBlockStudent={handleBlockStudent} onUnblockStudent={handleUnblockStudent} onDeleteAdmin={handleDeleteAdmin} onToggleBlockAdmin={handleToggleBlockAdmin} onToggleAdminPresence={handleToggleAdminPresence} onLogout={handleLogout} onDownload={handleDownload} onUpdateMarks={handleUpdateMarks} onLogAction={handleLogGenericAction} onNavigateToAnalyzer={() => setView('ANALYZER')} onChangePassword={handleChangePassword} onNavigateToSettings={() => setView('SETTINGS')} onBulkRegister={handleBulkRegister} onUpdateTimetableEntry={handleUpdateTimetableEntry} onNavigateToHolidayManagement={() => setView('HOLIDAY_MANAGEMENT')} onRequestLeave={handleRequestLeave} onCancelOwnLeave={handleCancelOwnLeave} onDeleteStudents={handleDeleteStudents} onBlockStudents={handleBlockStudents} onUnblockStudents={handleUnblockStudents} onDeleteAdmins={handleDeleteAdmins} onToggleAdminsBlock={handleToggleAdminsBlock} onGetAnomalies={handleGetAttendanceAnomalies} notifications={notifications} onMarkNotificationAsRead={handleMarkNotificationAsRead} onMarkAllNotificationsAsRead={handleMarkAllNotificationsAsRead} onSendBroadcast={handleSendBroadcast} onQueryKnowledgeBase={handleQueryKnowledgeBase} /> : null;
+            case 'TEACHER_DASHBOARD': return currentUser?.userType === 'ADMIN' ? <TeacherDashboard currentUser={currentUser} studentDirectory={studentDirectory} adminDirectory={adminDirectory} attendance={attendance} faceLinks={faceLinks} timeTable={timeTable} leaveRecords={leaveRecords} conversations={conversations} onSendMessage={handleSendMessage} onLogout={handleLogout} onStartAnalyzer={handleStartAnalyzerWithContext} onNavigateToSettings={() => setView('SETTINGS')} onSetManualAttendance={handleSetManualAttendance} onUpdateMarks={handleUpdateMarks} onLogAction={handleLogGenericAction} departments={departments} onRequestLeave={handleRequestLeave} onCancelOwnLeave={handleCancelOwnLeave} onToggleAdminPresence={handleToggleAdminPresence} notifications={notifications} onMarkNotificationAsRead={handleMarkNotificationAsRead} onMarkAllNotificationsAsRead={handleMarkAllNotificationsAsRead} onQueryKnowledgeBase={handleQueryKnowledgeBase} /> : null;
+            case 'STUDENT_DASHBOARD': {
                 if (currentUser?.userType === 'STUDENT') {
-                    // FIX: Removed unused `studentDirectory` prop, which is not defined in `StudentDashboardProps`, to resolve a type error.
-                    return <StudentDashboard
-                        currentUser={currentUser}
-                        attendance={attendance}
-                        faceLinks={faceLinks}
-                        onLogout={handleLogout}
-                        onLogAttendance={handleLogAttendance}
-                        onLinkFace={() => handleStudentSelfLinkFace(currentUser.rollNumber)}
+                    const studentUser = currentUser;
+                    return <StudentDashboard 
+                        currentUser={studentUser} 
+                        attendance={attendance} 
+                        faceLinks={faceLinks} 
+                        studentDirectory={studentDirectory} 
+                        adminDirectory={adminDirectory} 
+                        timeTable={timeTable} 
+                        conversations={conversations} 
+                        holidays={holidays}
+                        studyGroups={studyGroups}
+                        sharedNotes={sharedNotes}
+                        notifications={notifications}
+                        onSendMessage={handleSendMessage} 
+                        onLogout={handleLogout} 
+                        onLogAttendance={handleLogAttendance} 
+                        onLinkFace={() => handleStudentSelfLinkFace(studentUser.rollNumber)} 
+                        onChangePassword={handleChangePassword} 
+                        onNavigateToSettings={() => setView('SETTINGS')}
+                        onMarkNotificationAsRead={handleMarkNotificationAsRead}
+                        onMarkAllNotificationsAsRead={handleMarkAllNotificationsAsRead} 
+                        onCreateStudyGroup={handleCreateStudyGroup}
+                        onJoinStudyGroup={handleJoinStudyGroup}
+                        onDeclineStudyGroupInvitation={handleDeclineStudyGroupInvitation}
+                        onSendGroupMessage={handleSendGroupMessage}
+                        onDeleteGroupMessage={handleDeleteGroupMessage}
+                        onDeleteGroupResource={handleDeleteGroupResource}
+                        onUploadNote={handleUploadNote}
+                        onRateNote={handleRateNote}
+                        onSuggestStudyTime={handleSuggestStudyTime}
+                        onSummarizeNote={handleSummarizeNote}
+                        onPinMessage={handlePinMessage}
+                        onAddTask={handleAddTask}
+                        onToggleTask={handleToggleTask}
+                        onDeleteStudyGroup={handleDeleteStudyGroupByStudent}
+                        onPlacePrediction={handlePlacePrediction}
+                        onClaimReward={handleClaimReward}
+                        onAddMemberToGroup={handleAddMemberToGroup}
+                        onScheduleEvent={handleScheduleGroupEvent}
+                        onDeleteEvent={handleDeleteGroupEvent}
+                        onQueryKnowledgeBase={handleQueryKnowledgeBase}
                     />;
                 }
-                handleLogout();
                 return null;
-            case 'ANALYZER':
-                 const unlinkedStudents = Array.from(studentDirectory.values()).filter(s => {
-                    return !Array.from(faceLinks.values()).includes(s.rollNumber);
-                });
-                const linkedStudentCount = faceLinks.size;
-
-                return (
-                     <div className="w-full max-w-7xl mx-auto flex flex-col">
-                        {registrationTarget && (
-                            <RegistrationModal 
-                                face={registrationTarget}
-                                unlinkedStudents={unlinkedStudents}
-                                onClose={() => setRegistrationTarget(null)}
-                                onLink={handleLinkFaceToStudent}
-                            />
-                        )}
-                        <header className="mb-6 w-full flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                                <img src="https://krucet.ac.in/wp-content/uploads/2020/09/cropped-kru-150-round-non-transparent-1.png" alt="Krishna University Logo" className="w-12 h-12 rounded-full" />
-                                <div>
-                                    <h1 className="text-xl font-bold tracking-tight text-gray-200">Krishna University</h1>
-                                    <p className="text-sm text-gray-400">Face Attendance</p>
-                                </div>
-                            </div>
-                            <button onClick={() => setView(currentUser?.userType === 'ADMIN' && currentUser.designation === Designation.Teacher ? 'TEACHER_DASHBOARD' : 'ADMIN_DASHBOARD')} className="px-4 py-2 rounded-md font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 active:translate-y-0.5 shadow-lg">
-                                &larr; Back to Dashboard
-                            </button>
-                        </header>
-                        
-                        <main className="w-full bg-slate-800/40 rounded-2xl shadow-2xl p-4 md:p-6 border border-slate-800 backdrop-blur-sm">
-                            <div className="text-center mb-6">
-                                <h2 className="text-3xl md:text-4xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-cyan-300">
-                                    Live Attendance Analyzer
-                                </h2>
-                                <p className="text-gray-400 mt-1">Real-time attendance marking using facial recognition.</p>
-                            </div>
-                            <div className="flex flex-col md:flex-row gap-6">
-                                <div className={`relative w-full flex-grow aspect-video bg-slate-900 rounded-lg overflow-hidden border-2 border-slate-800 shadow-inner transition-shadow duration-500 ${stream ? 'shadow-lg shadow-indigo-500/40' : ''}`}>
-                                    <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" onLoadedMetadata={handleVideoMetadata} />
-                                    <canvas ref={canvasRef} className="hidden" />
-                                    {!stream && <WelcomeScreen />}
-                                    {stream && videoDimensions.width > 0 && <DetectionOverlay result={detectionResult} videoWidth={videoDimensions.width} videoHeight={videoDimensions.height} onRegister={handleRegisterStudentFace} />}
-                                </div>
-                                <DetectionSummary result={detectionResult} studentCount={linkedStudentCount} />
-                            </div>
-                            <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-4">
-                                <button
-                                    onClick={stream ? handleStopCamera : handleStartCamera}
-                                    className={`w-full sm:w-auto px-8 py-3 rounded-full text-lg font-semibold transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-opacity-50 flex items-center justify-center shadow-lg transform hover:scale-105 active:translate-y-0.5 ${
-                                        stream
-                                            ? 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 focus:ring-red-500 text-white'
-                                            : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:ring-indigo-500 text-white'
-                                    }`}
-                                >
-                                <CameraIcon className="w-6 h-6 mr-3" />
-                                {stream ? (
-                                        <div className="flex items-center gap-2">
-                                            <span>Stop Camera</span>
-                                            <span className="flex h-3 w-3 relative ml-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-300 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span></span>
-                                        </div>
-                                ) : 'Start Camera'}
-                                </button>
-                            </div>
-                            {error && (
-                                <div className={`mt-4 text-center rounded-lg p-3 animate-fade-in ${isApiError ? 'text-yellow-300 bg-yellow-900/50 border border-yellow-700' : 'text-red-300 bg-red-900/50 border border-red-700'}`}>
-                                    <p className="font-bold">{error.title}</p>
-                                    <p className="text-sm">{error.message}</p>
-                                </div>
-                            )}
-                        </main>
-                    </div>
-                );
-            default:
-                return <LoginScreen onLogin={handleLogin} onNavigateToRegister={(type) => setView(type === 'STUDENT' ? 'STUDENT_REGISTRATION' : 'ADMIN_REGISTRATION')} />;
+            }
+            case 'VERIFY_ACCOUNT': return userToVerify ? <VerificationScreen userToVerify={userToVerify} onVerified={() => {setUserToVerify(null); setView('LOGIN');}} onBackToLogin={() => setView('LOGIN')} /> : null;
+            case 'FORGOT_PASSWORD': return <ForgotPasswordScreen onRequestReset={handleRequestPasswordReset} onBackToLogin={() => setView('LOGIN')} />;
+            case 'RESET_PASSWORD': return <ResetPasswordScreen onResetPassword={handleResetPassword} onBackToLogin={() => setView('LOGIN')} />;
+            case 'SETTINGS': return currentUser ? <SettingsScreen onBackToDashboard={() => setView(currentUser.userType === 'STUDENT' ? 'STUDENT_DASHBOARD' : (currentUser.designation === Designation.Teacher || currentUser.designation === Designation.Incharge ? 'TEACHER_DASHBOARD' : 'ADMIN_DASHBOARD'))} onChangePassword={handleChangePassword} onDeleteSelf={handleDeleteSelf} theme={theme} setTheme={setTheme} /> : null;
+            case 'ONBOARDING': return currentUser?.userType === 'STUDENT' ? <OnboardingScreen currentUser={currentUser} onComplete={handleCompleteStudentOnboarding} /> : null;
+            case 'BLOCKED': return blockedInfo ? <BlockedScreen blockedInfo={blockedInfo} onBackToLogin={() => {setBlockedInfo(null); setView('LOGIN');}} /> : null;
+            case 'HOLIDAY_MANAGEMENT': return currentUser?.userType === 'ADMIN' ? <HolidayManagementScreen holidays={holidays} onGrantHoliday={handleGrantHoliday} onCancelHoliday={handleCancelHoliday} onBackToDashboard={() => setView('ADMIN_DASHBOARD')} /> : null;
+            default: return <div>Unknown view</div>;
         }
     }
 
     return (
-        <div className="min-h-screen flex flex-col items-center justify-center p-4 selection:bg-indigo-500/30">
-            {renderContent()}
+        <>
+        <ToastContainer toasts={toasts} onDismiss={removeToast} />
+        <div className="min-h-screen flex flex-col items-center justify-center p-4">
+            {view === 'ANALYZER' ? (
+                <div className="w-full max-w-7xl mx-auto flex flex-col h-full animate-fade-in">
+                    <header className="mb-4 w-full flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div className="flex items-center gap-3">
+                            <img src="https://krucet.ac.in/wp-content/uploads/2020/09/cropped-kru-150-round-non-transparent-1.png" alt="Krishna University Logo" className="w-10 h-10 rounded-full" />
+                            <div>
+                                <h1 className="text-xl font-bold text-white">Live Attendance Analyzer</h1>
+                                {analyzerContext && <p className="text-sm text-blue-300">Subject: {analyzerContext.subject}</p>}
+                            </div>
+                        </div>
+                        <div className="flex gap-2 self-end sm:self-auto">
+                             <button
+                                onClick={() => {
+                                    handleStopCamera();
+                                    if(currentUser?.userType === 'ADMIN') {
+                                        if (currentUser.designation === Designation.Teacher || currentUser.designation === Designation.Incharge) {
+                                            setView('TEACHER_DASHBOARD');
+                                        } else {
+                                            setView('ADMIN_DASHBOARD');
+                                        }
+                                    } else {
+                                        setView('LOGIN');
+                                    }
+                                }}
+                                className="px-4 py-2 rounded-lg font-semibold text-gray-800 dark:text-white bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 transition-all"
+                            >
+                                Back to Dashboard
+                            </button>
+                             <button
+                                onClick={stream ? handleStopCamera : handleStartCamera}
+                                onMouseMove={handleMouseMove}
+                                className={`btn-animated px-6 py-2 rounded-lg font-semibold text-white shadow-lg ${stream ? 'bg-red-600' : 'bg-blue-600'}`}
+                            >
+                                <span className="btn-content">
+                                    <span className="btn-dot"></span>
+                                    <CameraIcon className="w-5 h-5" />
+                                    <span>{stream ? 'Stop Camera' : 'Stop Camera'}</span>
+                                </span>
+                            </button>
+                        </div>
+                    </header>
+                    <main className="w-full flex-grow flex flex-col md:flex-row gap-4 items-start">
+                        <div className="relative w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border-2 border-slate-800 flex items-center justify-center">
+                            <video 
+                                ref={videoRef} 
+                                autoPlay 
+                                muted 
+                                playsInline 
+                                onLoadedMetadata={() => {
+                                    if(videoRef.current) {
+                                        setVideoDimensions({width: videoRef.current.videoWidth, height: videoRef.current.videoHeight});
+                                    }
+                                }}
+                                className="w-full h-full object-cover transform -scale-x-100"
+                            />
+                            <canvas ref={canvasRef} className="hidden" />
+                            {!stream && <WelcomeScreen />}
+                            {stream && <DetectionOverlay result={detectionResult} videoWidth={videoDimensions.width} videoHeight={videoDimensions.height} onRegister={handleRegisterStudentFace} focusPoint={focusPoint} />}
+                             {error && isApiError && (
+                                <div className="absolute bottom-4 left-4 bg-red-800/80 text-white p-3 rounded-lg animate-fade-in text-sm">{error.title}: {error.message}</div>
+                            )}
+                             {isPausedForRateLimit && (
+                                <div className="absolute bottom-4 left-4 bg-yellow-600/80 text-black p-3 rounded-lg animate-fade-in text-sm font-semibold">Rate limit reached. Pausing analysis for 60s.</div>
+                            )}
+                            <div className="absolute top-0 left-0 w-full h-4 bg-red-500 scanner-line animate-scanner hidden"></div>
+                        </div>
+                         <DetectionSummary result={detectionResult} studentCount={faceLinks.size} />
+                    </main>
+                     {registrationTarget && (
+                         <RegistrationModal 
+                            face={registrationTarget}
+                            unlinkedStudents={Array.from<StudentInfo>(studentDirectory.values()).filter(s => !Array.from(faceLinks.values()).includes(s.rollNumber))}
+                            onClose={() => setRegistrationTarget(null)}
+                            onLink={handleLinkFaceToStudent}
+                        />
+                    )}
+                </div>
+            ) : (
+                renderContent()
+            )}
+             { (view === 'LOGIN' || view === 'STUDENT_REGISTRATION' || view === 'ADMIN_REGISTRATION' || view === 'VERIFY_ACCOUNT' || view === 'FORGOT_PASSWORD' || view === 'RESET_PASSWORD' || view === 'ONBOARDING') && <MockInbox emails={simulatedEmails} />}
+             { currentUser?.userType === 'ADMIN' && <AIChatbot studentDirectory={studentDirectory} adminDirectory={adminDirectory} /> }
         </div>
+        </>
     );
-};
+}
 
 export default App;

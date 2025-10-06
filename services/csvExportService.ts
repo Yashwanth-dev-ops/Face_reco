@@ -1,3 +1,6 @@
+
+
+
 import { AttendanceRecord, StudentInfo, AdminInfo, Designation } from '../types';
 
 export function exportAttendanceToCSV(
@@ -5,27 +8,55 @@ export function exportAttendanceToCSV(
     faceLinks: Map<number, string>,
     studentDirectory: Map<string, StudentInfo>
 ): void {
-    const headers = ['Roll Number', 'Name', 'Department / Year', 'Date', 'Emotion', 'Status'];
+    const headers = ['Roll Number', 'Name', 'Department / Year', 'Date', 'Subject', 'Emotion', 'Status', 'Source', 'Marked By'];
 
-    const rows = attendance.map(record => {
+    // Process records to get the final status for each student/day/subject
+    const finalStatuses = new Map<string, AttendanceRecord>();
+    attendance.forEach(record => {
+        const student = studentDirectory.get(faceLinks.get(record.persistentId) || '');
+        if (!student) return;
+        
+        const dateString = new Date(record.timestamp).toDateString();
+        const key = `${student.rollNumber}-${dateString}-${record.subject}`;
+
+        const existing = finalStatuses.get(key);
+        if (!existing) {
+            finalStatuses.set(key, record);
+        } else {
+            // Manual entry always overrides AI. Latest manual entry wins.
+            if (record.source === 'Manual') {
+                if (existing.source === 'AI' || record.timestamp > existing.timestamp) {
+                    finalStatuses.set(key, record);
+                }
+            } else { // Current record is AI
+                if (existing.source === 'AI' && record.timestamp > existing.timestamp) {
+                    finalStatuses.set(key, record);
+                }
+            }
+        }
+    });
+
+
+    const rows = Array.from(finalStatuses.values()).map(record => {
         const rollNumber = faceLinks.get(record.persistentId);
         if (!rollNumber) return null;
 
         const student = studentDirectory.get(rollNumber);
-        if (!student) {
-            return null; // Skip if student not found (e.g., deleted)
-        }
-
+        if (!student) return null;
+        
         const date = new Date(record.timestamp);
-        const dateString = date.toLocaleDateString();
+        const dateString = date.toLocaleString();
 
         return [
             `"${student.rollNumber}"`,
             `"${student.name}"`,
             `"${student.department} / ${student.year}"`,
             `"${dateString}"`,
+            `"${record.subject || 'General'}"`,
             `"${record.emotion}"`,
-            `"Present"`
+            `"${record.status}"`,
+            `"${record.source}"`,
+            `"${record.markedBy || 'N/A'}"`
         ].join(',');
     }).filter(row => row !== null);
 
@@ -185,7 +216,7 @@ export function exportStudentDetailsReportToCSV(
     students: StudentInfo[],
     admins: AdminInfo[]
 ): void {
-    const headers = ['Name', 'Roll Number', 'Section', 'Phone Number', 'Incharge Name'];
+    const headers = ['Name', 'Roll Number', 'Section', 'Email', 'Phone Number', 'Incharge Name'];
 
     const incharges = admins.filter(a => a.designation === Designation.Incharge);
 
@@ -212,6 +243,7 @@ export function exportStudentDetailsReportToCSV(
             `"${student.name}"`,
             `"${student.rollNumber}"`,
             `"${student.section}"`,
+            `"${student.email}"`,
             `"${student.phoneNumber}"`,
             `"${inchargeName}"`
         ].join(',');

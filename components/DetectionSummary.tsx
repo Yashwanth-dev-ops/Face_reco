@@ -72,19 +72,22 @@ export const DetectionSummary: React.FC<{ result: DetectionResult, studentCount:
                          <div>
                             <h3 className="text-lg font-bold text-purple-300 mb-3">Linked Students ({visibleRegisteredStudents.length})</h3>
                             <div className="space-y-2">
-                                {visibleRegisteredStudents.map((face) => (
-                                    <div key={`person-${face.persistentId}`} className={`p-2.5 rounded-lg bg-slate-800/60 animate-fade-in ${face.studentInfo?.isBlocked ? 'ring-2 ring-red-500' : ''}`}>
+                                {visibleRegisteredStudents.map((face) => {
+                                    const isBlocked = !!(face.studentInfo?.blockExpiresAt && face.studentInfo.blockExpiresAt > Date.now());
+                                    return (
+                                        <div key={`person-${face.persistentId}`} className={`p-2.5 rounded-lg bg-slate-800/60 animate-fade-in ${isBlocked ? 'ring-2 ring-red-500' : ''}`}>
                                         <div className="flex items-center gap-3">
                                             <UserIcon className="w-6 h-6 text-gray-400 flex-shrink-0" />
                                             <div>
                                                 <p className="font-bold text-white truncate">{face.studentInfo?.name}</p>
                                                 <p className="text-xs text-gray-400">Roll: {face.studentInfo?.rollNumber}</p>
                                             </div>
-                                            {face.studentInfo?.isBlocked && <span className="text-xs font-bold text-red-400 bg-red-900/50 px-2 py-0.5 rounded">BLOCKED</span>}
+                                            {isBlocked && <span className="text-xs font-bold text-red-400 bg-red-900/50 px-2 py-0.5 rounded">BLOCKED</span>}
                                         </div>
                                         <p className="text-xs text-gray-500 mt-2 ml-1">AI Description: {face.personId}</p>
                                     </div>
-                                ))}
+                                    )
+                                })}
                             </div>
                         </div>
                     )}

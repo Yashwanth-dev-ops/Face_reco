@@ -1,5 +1,4 @@
-
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 type Status = 'PRESENT' | 'ABSENT' | 'BLOCKED' | 'UNLINKED';
 
@@ -8,6 +7,8 @@ interface AttendanceStatusPanelProps {
     onMarkAttendanceClick: () => void;
     onLinkFaceClick: () => void;
     lastLogTime: Date | null;
+    blockedByAdminName: string | null;
+    blockExpiresAt: number | null;
 }
 
 // Icon components for different statuses
@@ -33,16 +34,54 @@ const LinkIcon = () => (
     </svg>
 );
 
+const formatTimeLeft = (ms: number): string => {
+    if (ms <= 0) return "00:00:00";
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+};
 
-export const AttendanceStatusPanel: React.FC<AttendanceStatusPanelProps> = ({ status, onMarkAttendanceClick, onLinkFaceClick, lastLogTime }) => {
+const handleMouseMove = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    e.currentTarget.style.setProperty('--x', `${x}px`);
+    e.currentTarget.style.setProperty('--y', `${y}px`);
+};
+
+export const AttendanceStatusPanel: React.FC<AttendanceStatusPanelProps> = ({ status, onMarkAttendanceClick, onLinkFaceClick, lastLogTime, blockedByAdminName, blockExpiresAt }) => {
+    const [timeLeft, setTimeLeft] = useState('');
+
+    useEffect(() => {
+        if (status === 'BLOCKED' && blockExpiresAt && blockExpiresAt !== Infinity) {
+            const updateTimer = () => {
+                const remaining = blockExpiresAt - Date.now();
+                if (remaining > 0) {
+                    setTimeLeft(formatTimeLeft(remaining));
+                } else {
+                    setTimeLeft("Expired. Please refresh.");
+                    clearInterval(intervalId);
+                }
+            };
+            
+            updateTimer();
+            const intervalId = setInterval(updateTimer, 1000);
+            return () => clearInterval(intervalId);
+        }
+    }, [status, blockExpiresAt]);
+
+
     let config = {
         icon: <></>,
         title: '',
         message: '',
         button: null,
-        bgColor: 'bg-slate-700/40',
-        borderColor: 'border-slate-600/50',
+        bgColor: 'bg-gray-700/40',
+        borderColor: 'border-gray-600/50',
         textColor: 'text-gray-300',
+        extraContent: null as React.ReactNode,
     };
 
     switch (status) {
@@ -55,7 +94,6 @@ export const AttendanceStatusPanel: React.FC<AttendanceStatusPanelProps> = ({ st
                 bgColor: 'bg-green-900/40',
                 borderColor: 'border-green-700/50',
                 textColor: 'text-green-400',
-                button: null,
             };
             break;
         case 'ABSENT':
@@ -68,8 +106,11 @@ export const AttendanceStatusPanel: React.FC<AttendanceStatusPanelProps> = ({ st
                 borderColor: 'border-yellow-700/50',
                 textColor: 'text-yellow-400',
                 button: (
-                    <button onClick={onMarkAttendanceClick} className="mt-6 px-8 py-3 rounded-full text-lg font-semibold text-white bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-cyan-500/50 active:translate-y-0.5">
-                        Mark My Attendance
+                    <button onMouseMove={handleMouseMove} onClick={onMarkAttendanceClick} className="btn-animated mt-6 px-8 py-3 rounded-lg text-lg font-semibold text-white bg-blue-600 transition-colors shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-blue-500">
+                        <span className="btn-content">
+                            <span className="btn-dot"></span>
+                            <span>Mark My Attendance</span>
+                        </span>
                     </button>
                 ),
             };
@@ -84,22 +125,37 @@ export const AttendanceStatusPanel: React.FC<AttendanceStatusPanelProps> = ({ st
                 borderColor: 'border-blue-700/50',
                 textColor: 'text-blue-400',
                 button: (
-                    <button onClick={onLinkFaceClick} className="mt-6 px-8 py-3 rounded-full text-lg font-semibold text-white bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 transition-all duration-300 ease-in-out shadow-lg transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 active:translate-y-0.5">
-                        Link My Face
+                    <button onMouseMove={handleMouseMove} onClick={onLinkFaceClick} className="btn-animated mt-6 px-8 py-3 rounded-lg text-lg font-semibold text-white bg-blue-600 transition-colors shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-blue-500">
+                        <span className="btn-content">
+                            <span className="btn-dot"></span>
+                            <span>Link My Face</span>
+                        </span>
                     </button>
                 ),
             };
             break;
         case 'BLOCKED':
+            const isPermanent = blockExpiresAt === Infinity;
             config = {
                 ...config,
                 icon: <BlockedIcon />,
                 title: 'ACCOUNT BLOCKED',
-                message: 'Your account has been blocked by an administrator. You cannot mark attendance.',
+                message: `Your account has been blocked by ${blockedByAdminName}. You cannot mark attendance.`,
                 bgColor: 'bg-red-900/40',
                 borderColor: 'border-red-700/50',
                 textColor: 'text-red-400',
-                button: null,
+                extraContent: (
+                    <div className="mt-4 text-center">
+                        {isPermanent ? (
+                            <p className="font-bold text-lg text-white">This block is permanent.</p>
+                        ) : (
+                            <div>
+                                <p className="text-gray-300">Access will be restored in:</p>
+                                <p className="text-3xl font-mono font-bold text-white mt-1">{timeLeft}</p>
+                            </div>
+                        )}
+                    </div>
+                )
             };
             break;
     }
@@ -111,6 +167,7 @@ export const AttendanceStatusPanel: React.FC<AttendanceStatusPanelProps> = ({ st
             </div>
             <h3 className={`mt-4 text-3xl font-black tracking-tighter ${config.textColor}`}>{config.title}</h3>
             <p className="mt-2 max-w-md mx-auto text-gray-300">{config.message}</p>
+            {config.extraContent}
             {config.button}
         </div>
     );

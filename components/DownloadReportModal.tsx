@@ -1,25 +1,43 @@
+
+
+
+
 import React, { useState } from 'react';
 import { Year, AdminInfo, Designation } from '../types';
 
 interface DownloadReportModalProps {
     onClose: () => void;
-    onSubmit: (department: string, year: Year, section: string) => void;
+    // FIX: Update onSubmit to allow 'ALL' for the year parameter to match filter logic.
+    onSubmit: (department: string, year: Year | 'ALL', section: string, time: string) => void;
     title: string;
     departments: string[];
     currentUser: AdminInfo;
 }
+
+const TIME_SLOTS = ['ALL', '09:00-10:00', '10:00-11:00', '11:00-12:00', '12:00-13:00', '13:00-14:00', '14:00-15:00', '15:00-16:00'];
+
+
+const handleMouseMove = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    e.currentTarget.style.setProperty('--x', `${x}px`);
+    e.currentTarget.style.setProperty('--y', `${y}px`);
+};
 
 export const DownloadReportModal: React.FC<DownloadReportModalProps> = ({ onClose, onSubmit, title, departments, currentUser }) => {
     
     const isDeptSelectionDisabled = [Designation.HOD, Designation.Incharge].includes(currentUser.designation);
     
     const [department, setDepartment] = useState(isDeptSelectionDisabled ? currentUser.department : 'ALL');
-    const [year, setYear] = useState<Year>(Year.First);
+    // FIX: Change year state to allow 'ALL' and set it as default.
+    const [year, setYear] = useState<Year | 'ALL'>('ALL');
     const [section, setSection] = useState('ALL');
+    const [time, setTime] = useState('ALL');
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onSubmit(department, year, section);
+        onSubmit(department, year, section, time);
     };
 
     return (
@@ -28,13 +46,13 @@ export const DownloadReportModal: React.FC<DownloadReportModalProps> = ({ onClos
             onClick={onClose}
         >
             <div 
-                className="bg-slate-800 rounded-2xl shadow-2xl p-8 border border-slate-700 w-full max-w-md m-4"
+                className="bg-slate-800 rounded-2xl shadow-2xl p-8 border border-slate-700 w-full max-w-lg m-4 animate-scale-in"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="text-center">
                     <h2 className="text-2xl font-bold text-white">{title}</h2>
                     <p className="text-gray-400 mt-1">
-                        Please select the year, section, and branch for the report.
+                        Please select the criteria for the report.
                     </p>
                 </div>
 
@@ -47,7 +65,7 @@ export const DownloadReportModal: React.FC<DownloadReportModalProps> = ({ onClos
                             id="department"
                             value={department}
                             onChange={(e) => setDepartment(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition disabled:cursor-not-allowed disabled:bg-slate-800"
+                            className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white transition disabled:cursor-not-allowed disabled:bg-slate-800"
                             required
                             disabled={isDeptSelectionDisabled}
                         >
@@ -63,10 +81,13 @@ export const DownloadReportModal: React.FC<DownloadReportModalProps> = ({ onClos
                             <select
                                 id="year"
                                 value={year}
-                                onChange={(e) => setYear(e.target.value as Year)}
-                                className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                                // FIX: Update onChange to handle 'ALL' for year.
+                                onChange={(e) => setYear(e.target.value as Year | 'ALL')}
+                                className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white transition"
                                 required
                             >
+                                {/* FIX: Add 'All Years' option. */}
+                                <option value="ALL">All Years</option>
                                 {Object.values(Year).map(y => <option key={y} value={y}>{y}</option>)}
                             </select>
                         </div>
@@ -78,7 +99,7 @@ export const DownloadReportModal: React.FC<DownloadReportModalProps> = ({ onClos
                                 id="section"
                                 value={section}
                                 onChange={(e) => setSection(e.target.value)}
-                                className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                                className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white transition"
                                 required
                             >
                                 <option value="ALL">All Sections</option>
@@ -88,6 +109,20 @@ export const DownloadReportModal: React.FC<DownloadReportModalProps> = ({ onClos
                                 <option value="4">Section 4</option>
                             </select>
                         </div>
+                     </div>
+                      <div>
+                        <label htmlFor="time" className="block text-sm font-medium text-gray-300 mb-1">
+                            Time Slot / Period
+                        </label>
+                        <select
+                            id="time"
+                            value={time}
+                            onChange={(e) => setTime(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white transition"
+                            required
+                        >
+                            {TIME_SLOTS.map(t => <option key={t} value={t}>{t === 'ALL' ? 'All Day' : t}</option>)}
+                        </select>
                      </div>
 
                     <div className="flex items-center justify-end gap-4 pt-4">
@@ -99,10 +134,14 @@ export const DownloadReportModal: React.FC<DownloadReportModalProps> = ({ onClos
                             Cancel
                         </button>
                         <button
+                            onMouseMove={handleMouseMove}
                             type="submit"
-                            className="px-6 py-2 rounded-md font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            className="btn-animated px-6 py-2 rounded-md font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         >
-                            Download Report
+                            <span className="btn-content">
+                                <span className="btn-dot"></span>
+                                <span>Download Report</span>
+                            </span>
                         </button>
                     </div>
                 </form>

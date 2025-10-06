@@ -1,5 +1,5 @@
-
 import React from 'react';
+// Fix: Import MediaSettingsRange for camera focus capabilities.
 import { DetectionResult, FaceResult, HandResult } from '../types';
 import { emotionUIConfig, handSignUIConfig } from './uiConfig';
 
@@ -8,6 +8,7 @@ interface DetectionOverlayProps {
     videoWidth: number;
     videoHeight: number;
     onRegister: (face: FaceResult) => void;
+    focusPoint: { x: number; y: number; focusing: boolean } | null;
 }
 
 const BoundingBox: React.FC<{
@@ -32,7 +33,7 @@ const BoundingBox: React.FC<{
     };
     
     const isRegistered = !!face.studentInfo;
-    const isBlocked = face.studentInfo?.isBlocked === true;
+    const isBlocked = !!(face.studentInfo?.blockExpiresAt && face.studentInfo.blockExpiresAt > Date.now());
     const borderColor = isBlocked ? 'border-red-500' : colors.border;
 
     return (
@@ -54,13 +55,26 @@ const BoundingBox: React.FC<{
 };
 
 
-export const DetectionOverlay: React.FC<DetectionOverlayProps> = ({ result, videoWidth, videoHeight, onRegister }) => {
-    if (!result || (!result.faces.length && !result.hands.length)) {
+export const DetectionOverlay: React.FC<DetectionOverlayProps> = ({ result, videoWidth, videoHeight, onRegister, focusPoint }) => {
+    if (!result || (!result.faces.length && !result.hands.length && !focusPoint)) {
         return null;
     }
 
     return (
         <div className="absolute inset-0 w-full h-full pointer-events-none">
+             {focusPoint && (
+                <div
+                    className={`absolute w-16 h-16 rounded-full border-2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-all duration-300 ${
+                        focusPoint.focusing
+                            ? 'border-yellow-400 animate-pulse-fast scale-110'
+                            : 'border-green-400 opacity-75'
+                    }`}
+                    style={{
+                        left: `${focusPoint.x * videoWidth}px`,
+                        top: `${focusPoint.y * videoHeight}px`,
+                    }}
+                />
+            )}
             {result.faces.map((face: FaceResult, index) => {
                 const config = emotionUIConfig[face.emotion];
                 const idLabel = face.studentInfo ? face.studentInfo.name : (face.persistentId ? `Person ${face.persistentId}` : face.personId);

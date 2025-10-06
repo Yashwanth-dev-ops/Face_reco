@@ -2,6 +2,7 @@
   "name": "Krishna University Face Attendance",
   "description": "A real-time face attendance system for Krishna University. It uses your camera to detect students and log attendance using the Gemini API.",
   "requestFramePermissions": [
-    "camera"
+    "camera",
+    "microphone"
   ]
 }

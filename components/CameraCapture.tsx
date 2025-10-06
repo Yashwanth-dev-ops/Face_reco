@@ -94,10 +94,15 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             const context = canvas.getContext('2d');
-            context?.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
-            const dataUrl = canvas.toDataURL(photoFormat, photoQuality);
-            onPhotoCaptured(dataUrl);
-            stopCamera();
+            // Flip the context horizontally before drawing to un-mirror the final image
+            if (context) {
+                context.translate(video.videoWidth, 0);
+                context.scale(-1, 1);
+                context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+                const dataUrl = canvas.toDataURL(photoFormat, photoQuality);
+                onPhotoCaptured(dataUrl);
+                stopCamera();
+            }
         }
     };
     
@@ -131,15 +136,15 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
     };
 
     return (
-        <div>
+        <div className="pt-2">
             <label className="block text-sm font-medium text-gray-300 mb-2 text-center">Profile Photo</label>
-            <div className="w-full aspect-video bg-slate-900 rounded-lg overflow-hidden relative border-2 border-slate-700">
+            <div className="w-64 mx-auto aspect-[4/3] bg-gray-900 rounded-lg overflow-hidden relative border border-gray-700">
                 {photo ? (
                     <img src={photo} alt="Captured profile" className="w-full h-full object-cover" />
                 ) : (
                     <>
-                        <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover"></video>
-                        {error && <div className="absolute inset-0 flex items-center justify-center p-4 bg-black/50 text-red-400 text-center text-sm">{error}</div>}
+                        <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover transform -scale-x-100"></video>
+                        {error && <div className="absolute inset-0 flex items-center justify-center p-4 bg-black/70 text-red-400 text-center text-sm">{error}</div>}
                     </>
                 )}
                 <canvas ref={canvasRef} className="hidden"></canvas>
@@ -153,16 +158,16 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
                 className="hidden"
             />
             
-            <div className="flex justify-center mt-3">
+            <div className="flex justify-center mt-4">
                 {photo ? (
-                    <button type="button" onClick={onRetake} className="px-6 py-2 rounded-md font-semibold text-white bg-rose-600 hover:bg-rose-700 transition-all duration-150 ease-in-out active:translate-y-0.5 shadow-lg">Retake Photo</button>
+                    <button type="button" onClick={onRetake} className="px-6 py-2 rounded-lg font-semibold text-white bg-rose-600 hover:bg-rose-500 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-rose-500 shadow-lg">Retake Photo</button>
                 ) : (
                     <div className="flex items-center gap-4">
-                         <button type="button" onClick={handleCapture} disabled={!stream} className="px-4 py-2 rounded-md font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-all duration-150 ease-in-out active:translate-y-0.5 shadow-lg flex items-center gap-2 disabled:opacity-50">
+                         <button type="button" onClick={handleCapture} disabled={!stream} className="px-4 py-2 rounded-lg font-semibold text-white bg-blue-600 hover:bg-blue-500 transition-all shadow-lg flex items-center gap-2 disabled:opacity-50">
                             <CameraIcon className="w-5 h-5"/> Capture
                         </button>
                         <span className="text-gray-500 text-sm">or</span>
-                        <button type="button" onClick={handleUploadClick} className="px-4 py-2 rounded-md font-semibold text-indigo-300 bg-slate-700 hover:bg-slate-600 transition-all duration-150 ease-in-out active:translate-y-0.5 shadow-lg flex items-center gap-2">
+                        <button type="button" onClick={handleUploadClick} className="px-4 py-2 rounded-lg font-semibold text-blue-300 bg-gray-700 hover:bg-gray-600 transition-all shadow-lg flex items-center gap-2">
                             <UploadIcon className="w-5 h-5"/> Upload File
                         </button>
                     </div>

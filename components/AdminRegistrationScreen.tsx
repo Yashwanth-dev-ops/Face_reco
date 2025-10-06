@@ -1,168 +1,188 @@
+
+
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { AdminInfo, Designation, Year } from '../types';
 import { CameraCapture } from './CameraCapture';
+import { PasswordStrengthMeter } from './PasswordStrengthMeter';
 
 interface AdminRegistrationScreenProps {
     departments: string[];
-    onRegister: (admin: AdminInfo) => Promise<void>;
+    onRegisterAdmin: (admin: Omit<AdminInfo, 'isVerified' | 'isBlocked'>) => Promise<void>;
     onBackToLogin: () => void;
 }
 
-export const AdminRegistrationScreen: React.FC<AdminRegistrationScreenProps> = ({ departments, onRegister, onBackToLogin }) => {
-    const [name, setName] = useState('');
-    const [idNumber, setIdNumber] = useState('');
-    const [phoneNumber, setPhoneNumber] = useState('');
-    const [department, setDepartment] = useState('');
-    const [designation, setDesignation] = useState<Designation>(Designation.Teacher);
-    const [password, setPassword] = useState('');
+const LoadingSpinner: React.FC = () => (
+    <div className="w-5 h-5 border-2 border-t-2 border-gray-200 border-t-transparent rounded-full animate-spin"></div>
+);
+
+const handleMouseMove = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    e.currentTarget.style.setProperty('--x', `${x}px`);
+    e.currentTarget.style.setProperty('--y', `${y}px`);
+};
+
+export const AdminRegistrationScreen: React.FC<AdminRegistrationScreenProps> = ({ departments, onRegisterAdmin, onBackToLogin }) => {
+    const [formData, setFormData] = useState({
+        name: '',
+        idNumber: '',
+        email: '',
+        phoneNumber: '',
+        department: departments.filter(d => d !== 'Administration')[0] || '',
+        designation: Designation.Teacher,
+        year: Year.First,
+        section: '1',
+        password: '',
+        confirmPassword: '',
+    });
+    const [photoBase64, setPhotoBase64] = useState<string | null>(null);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-    const [isDepartmentDisabled, setIsDepartmentDisabled] = useState(false);
-    const [photoBase64, setPhotoBase64] = useState<string | null>(null);
-    const [section, setSection] = useState('1');
-    const [year, setYear] = useState<Year>(Year.First);
 
     const academicDepartments = useMemo(() => departments.filter(d => d !== 'Administration'), [departments]);
-    
+    const isLeadershipRole = formData.designation === Designation.Principal || formData.designation === Designation.VicePrincipal || formData.designation === Designation.Chairman;
+
     useEffect(() => {
-        const isPrincipalOrVP = designation === Designation.Principal || designation === Designation.VicePrincipal;
-        setIsDepartmentDisabled(isPrincipalOrVP);
-        if (isPrincipalOrVP) {
-            setDepartment('Administration');
+        if (isLeadershipRole) {
+            setFormData(prev => ({ ...prev, department: 'Administration' }));
         } else {
-            // If the current department is 'Administration' or not in the academic list, reset it.
-            if (department === 'Administration' || !academicDepartments.includes(department)) {
-                setDepartment(academicDepartments[0] || ''); // Set to the first available academic dept, or empty string.
+            if (formData.department === 'Administration') {
+                setFormData(prev => ({ ...prev, department: academicDepartments[0] || '' }));
             }
         }
-    }, [designation, academicDepartments, department]);
+    }, [formData.designation, academicDepartments, isLeadershipRole]);
+
+    const handleChange = (field: keyof typeof formData, value: string) => {
+        setError('');
+        setFormData(prev => ({ ...prev, [field]: value }));
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
+
         if (!photoBase64) {
-            setError('Please capture a profile photo before registering.');
+            setError("Please provide a profile photo for Face ID.");
             return;
         }
+        if (formData.password !== formData.confirmPassword) {
+            setError("Passwords do not match.");
+            return;
+        }
+
         setLoading(true);
         try {
-            const newAdmin: AdminInfo = { 
-                name, 
-                idNumber, 
-                phoneNumber, 
-                department: department.trim(), 
-                designation, 
-                password,
-                photoBase64,
-                section: designation === Designation.Incharge ? section : undefined,
-                year: designation === Designation.Incharge ? year : undefined,
-            };
-            await onRegister(newAdmin);
+            await onRegisterAdmin({
+                name: formData.name,
+                idNumber: formData.idNumber,
+                email: formData.email,
+                phoneNumber: formData.phoneNumber,
+                department: formData.department.trim(),
+                designation: formData.designation,
+                section: formData.designation === Designation.Incharge ? formData.section : undefined,
+                year: formData.designation === Designation.Incharge ? formData.year : undefined,
+                password: formData.password,
+                photoBase64: photoBase64,
+            });
         } catch (err) {
-            if (err instanceof Error) {
-                setError(err.message);
-            } else {
-                setError("An unknown registration error occurred.");
-            }
+            setError(err instanceof Error ? err.message : "An unknown registration error occurred.");
         } finally {
             setLoading(false);
         }
     };
 
-    const handleDesignationChange = (newDesignation: Designation) => {
-        setDesignation(newDesignation);
-        setSection('1');
-        setYear(Year.First);
-    };
-
     return (
-        <div className="w-full max-w-md mx-auto animate-fade-in">
+        <div className="w-full max-w-lg mx-auto animate-slide-up">
             <div className="text-center mb-8">
-                 <h1 className="text-3xl font-bold text-white">Krishna University</h1>
-                 <p className="text-gray-400 mt-1">Admin & Staff Registration</p>
+                <h1 className="text-3xl font-bold text-white">Admin & Staff Registration</h1>
+                <p className="text-gray-400 mt-1">Create your administrative account.</p>
             </div>
-            <div className="bg-slate-800/40 rounded-2xl shadow-2xl p-8 border border-slate-800 backdrop-blur-sm">
-                 <form onSubmit={handleSubmit} className="space-y-4">
-                    <InputField label="Full Name" type="text" value={name} onChange={setName} required />
-                    <InputField label="ID Number (Username)" type="text" value={idNumber} onChange={setIdNumber} required />
-                    <InputField label="Phone Number" type="tel" value={phoneNumber} onChange={setPhoneNumber} required />
-                    <SelectField label="Designation" value={designation} onChange={handleDesignationChange} options={Object.values(Designation)} required />
-                    {designation === Designation.Incharge && (
-                        <div className="flex gap-4">
-                            <div className="flex-1">
-                                <SelectField label="Year Resp." value={year} onChange={setYear} options={Object.values(Year)} required />
-                            </div>
-                             <div className="flex-1">
-                                <SelectField label="Section Resp." value={section} onChange={setSection} options={['1', '2', '3', '4', 'All Sections']} required />
+            <div className="bg-gray-800/50 rounded-2xl shadow-2xl p-8 border border-gray-700 backdrop-blur-sm">
+                <form onSubmit={handleSubmit} className="space-y-6">
+                    <fieldset>
+                        <legend className="text-lg font-semibold text-white mb-4 text-center">Face ID Photo</legend>
+                        <CameraCapture 
+                            photo={photoBase64}
+                            onPhotoCaptured={setPhotoBase64}
+                            onRetake={() => setPhotoBase64(null)}
+                        />
+                    </fieldset>
+                    
+                    <fieldset>
+                        <legend className="text-lg font-semibold text-white mb-4 border-b border-gray-700 pb-2">Personal & Contact Details</legend>
+                        <div className="space-y-4">
+                            <input type="text" placeholder="Full Name" value={formData.name} onChange={e => handleChange('name', e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white" required />
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <input type="email" placeholder="Email Address" value={formData.email} onChange={e => handleChange('email', e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white" required />
+                                <input type="tel" placeholder="Phone Number" value={formData.phoneNumber} onChange={e => handleChange('phoneNumber', e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white" required />
                             </div>
                         </div>
-                    )}
-                    
-                    {isDepartmentDisabled ? (
-                         <InputField label="Department" type="text" value={department} onChange={() => {}} required disabled={true} />
-                    ) : (
-                        <SelectField 
-                            label="Department" 
-                            value={department} 
-                            onChange={setDepartment} 
-                            options={academicDepartments} 
-                            required 
-                        />
-                    )}
+                    </fieldset>
 
-                    <InputField label="Password" type="password" value={password} onChange={setPassword} required />
-                    
-                    <CameraCapture 
-                        photo={photoBase64}
-                        onPhotoCaptured={setPhotoBase64}
-                        onRetake={() => setPhotoBase64(null)}
-                    />
+                     <fieldset>
+                        <legend className="text-lg font-semibold text-white mb-4 border-b border-gray-700 pb-2">Official Details</legend>
+                        <div className="space-y-4">
+                             <input type="text" placeholder="Admin ID Number" value={formData.idNumber} onChange={e => handleChange('idNumber', e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white" required />
+                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <select value={formData.designation} onChange={e => handleChange('designation', e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white" required>
+                                    {Object.values(Designation).map(d => <option key={d} value={d}>{d}</option>)}
+                                </select>
+                                <select value={formData.department} onChange={e => handleChange('department', e.target.value)} disabled={isLeadershipRole} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white disabled:bg-gray-700 disabled:cursor-not-allowed" required>
+                                     {isLeadershipRole 
+                                        ? <option value="Administration">Administration</option>
+                                        : academicDepartments.map(d => <option key={d} value={d}>{d}</option>)}
+                                </select>
+                            </div>
 
-                    {error && <p className="text-sm text-red-400 text-center">{error}</p>}
+                            {formData.designation === Designation.Incharge && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 border border-gray-700 rounded-lg bg-gray-900/40">
+                                     <select value={formData.year} onChange={e => handleChange('year', e.target.value)} className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white" required>
+                                        <option value="" disabled>Year of Responsibility</option>
+                                        {Object.values(Year).map(y => <option key={y} value={y}>{y}</option>)}
+                                    </select>
+                                    <select value={formData.section} onChange={e => handleChange('section', e.target.value)} className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white" required>
+                                        <option value="" disabled>Section of Responsibility</option>
+                                        <option value="All Sections">All Sections</option>
+                                        <option value="1">Section 1</option>
+                                        <option value="2">Section 2</option>
+                                        <option value="3">Section 3</option>
+                                        <option value="4">Section 4</option>
+                                    </select>
+                                </div>
+                            )}
+                        </div>
+                    </fieldset>
                     
-                    <div className="flex items-center justify-between gap-4 pt-4">
-                        <button type="button" onClick={onBackToLogin} className="px-6 py-2 rounded-md text-gray-300 hover:underline">
-                            &larr; Back to Login
-                        </button>
-                        <button type="submit" disabled={loading || !photoBase64} className="px-6 py-2 rounded-md font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 active:translate-y-0.5 shadow-lg disabled:opacity-50">
-                            {loading ? 'Registering...' : 'Register'}
+                    <fieldset>
+                        <legend className="text-lg font-semibold text-white mb-4 border-b border-gray-700 pb-2">Account Security</legend>
+                        <div className="space-y-4">
+                            <div>
+                                <input type="password" placeholder="Create a password" value={formData.password} onChange={e => handleChange('password', e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white" required />
+                                <PasswordStrengthMeter password={formData.password} />
+                            </div>
+                            <input type="password" placeholder="Confirm your password" value={formData.confirmPassword} onChange={e => handleChange('confirmPassword', e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white" required />
+                        </div>
+                    </fieldset>
+
+                    {error && <p className="text-sm text-red-400 text-center pt-2">{error}</p>}
+
+                    <div className="pt-4">
+                         <button onMouseMove={handleMouseMove} type="submit" disabled={loading} className="btn-animated w-full px-6 py-3 rounded-lg font-semibold text-white bg-blue-600 transition-colors shadow-lg disabled:opacity-50 flex items-center justify-center">
+                             <span className="btn-content">
+                                <span className="btn-dot"></span>
+                                <span>{loading ? <LoadingSpinner /> : 'Register'}</span>
+                            </span>
                         </button>
                     </div>
-                 </form>
+                </form>
+                <div className="text-center mt-6 border-t border-gray-700 pt-4">
+                    <button onClick={onBackToLogin} className="text-sm text-gray-400 hover:text-white hover:underline">
+                        &larr; Back to Login
+                    </button>
+                </div>
             </div>
         </div>
     );
 };
-
-// Helper sub-components for form fields
-const InputField: React.FC<{label: string, type: string, value: string, onChange: (val: string) => void, required?: boolean, list?: string, disabled?: boolean}> = 
-({ label, type, value, onChange, required, list, disabled = false }) => (
-    <div>
-        <label className="block text-sm font-medium text-gray-300 mb-1">{label}</label>
-        <input
-            type={type}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500 transition disabled:bg-slate-800 disabled:cursor-not-allowed"
-            required={required}
-            list={list}
-            disabled={disabled}
-        />
-    </div>
-);
-
-const SelectField: React.FC<{label: string, value: string, onChange: (val: any) => void, options: string[], required?: boolean}> =
-({ label, value, onChange, options, required }) => (
-     <div>
-        <label className="block text-sm font-medium text-gray-300 mb-1">{label}</label>
-        <select
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500 transition"
-            required={required}
-        >
-            {options.length === 0 && <option value="" disabled>No departments found</option>}
-            {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-        </select>
-    </div>
-);

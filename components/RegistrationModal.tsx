@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { FaceResult, StudentInfo } from '../types';
 
@@ -8,6 +9,14 @@ interface RegistrationModalProps {
     onClose: () => void;
     onLink: (persistentId: number, rollNumber: string) => void;
 }
+
+const handleMouseMove = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    e.currentTarget.style.setProperty('--x', `${x}px`);
+    e.currentTarget.style.setProperty('--y', `${y}px`);
+};
 
 export const RegistrationModal: React.FC<RegistrationModalProps> = ({ face, unlinkedStudents, onClose, onLink }) => {
     const [selectedRollNumber, setSelectedRollNumber] = useState(unlinkedStudents[0]?.rollNumber || '');
@@ -43,7 +52,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({ face, unli
             onClick={onClose}
         >
             <div 
-                className="bg-slate-800 rounded-2xl shadow-2xl p-8 border border-slate-700 w-full max-w-md m-4"
+                className="bg-slate-800 rounded-2xl shadow-2xl p-8 border border-slate-700 w-full max-w-md m-4 animate-scale-in"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="text-center">
@@ -62,7 +71,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({ face, unli
                             id="student"
                             value={selectedRollNumber}
                             onChange={(e) => setSelectedRollNumber(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                            className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white transition"
                             required
                         >
                             <option value="" disabled>-- Select a student --</option>
@@ -86,11 +95,15 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({ face, unli
                             Cancel
                         </button>
                         <button
+                            onMouseMove={handleMouseMove}
                             type="submit"
-                            className="px-6 py-2 rounded-md font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-500 disabled:cursor-not-allowed"
+                            className="btn-animated px-6 py-2 rounded-md font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-500 disabled:cursor-not-allowed"
                             disabled={!selectedRollNumber}
                         >
-                            Link Student
+                            <span className="btn-content">
+                                <span className="btn-dot"></span>
+                                <span>Link Student</span>
+                            </span>
                         </button>
                     </div>
                 </form>

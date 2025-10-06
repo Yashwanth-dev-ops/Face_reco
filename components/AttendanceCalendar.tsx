@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { AttendanceRecord } from '../types';
 
@@ -72,7 +71,7 @@ export const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({ studentA
             if (isToday) {
                 dayClass += isPresent
                     ? " bg-green-500 text-white font-bold ring-2 ring-green-400"
-                    : " bg-indigo-600 text-white font-bold ring-2 ring-indigo-400";
+                    : " bg-blue-600 text-white font-bold ring-2 ring-blue-500";
             } else if (isPresent) {
                 dayClass += " bg-green-500/30 text-green-300";
             } else if (isPast) {
@@ -95,13 +94,13 @@ export const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({ studentA
     };
     
     return (
-        <div className="bg-slate-900/50 p-6 rounded-lg">
+        <div className="bg-gray-800/50 p-4 sm:p-6 rounded-xl border border-gray-700">
             <div className="flex justify-between items-center mb-4">
-                <button onClick={() => changeMonth(-1)} className="p-2 rounded-full hover:bg-slate-700 transition-colors text-gray-400 hover:text-white">
+                <button onClick={() => changeMonth(-1)} className="p-2 rounded-full hover:bg-gray-700 transition-colors text-gray-400 hover:text-white">
                     <ChevronLeftIcon />
                 </button>
                 <h4 className="font-bold text-lg text-white">{monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}</h4>
-                <button onClick={() => changeMonth(1)} disabled={isFutureMonth} className="p-2 rounded-full hover:bg-slate-700 transition-colors text-gray-400 hover:text-white disabled:text-gray-700 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+                <button onClick={() => changeMonth(1)} disabled={isFutureMonth} className="p-2 rounded-full hover:bg-gray-700 transition-colors text-gray-400 hover:text-white disabled:text-gray-700 disabled:cursor-not-allowed disabled:hover:bg-transparent">
                     <ChevronRightIcon />
                 </button>
             </div>
