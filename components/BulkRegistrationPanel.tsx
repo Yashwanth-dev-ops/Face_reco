@@ -1,8 +1,7 @@
 
 
-
 import React, { useState } from 'react';
-import { StudentInfo, AdminInfo, Year } from '../types';
+import { StudentInfo, AdminInfo, Year, Gender } from '../types';
 
 type BulkRegisterResult = {
     successful: StudentInfo[];
@@ -78,7 +77,7 @@ export const BulkRegistrationPanel: React.FC<BulkRegistrationPanelProps> = ({ on
                 }
 
                 const headers = lines[0].split(',').map(h => h.trim());
-                const requiredHeaders = ['name', 'rollNumber', 'department', 'year', 'section', 'email', 'phoneNumber'];
+                const requiredHeaders = ['name', 'rollNumber', 'department', 'year', 'section', 'email', 'phoneNumber', 'gender'];
                 const missingHeaders = requiredHeaders.filter(rh => !headers.includes(rh));
 
                 if (missingHeaders.length > 0) {
@@ -93,11 +92,14 @@ export const BulkRegistrationPanel: React.FC<BulkRegistrationPanelProps> = ({ on
                     }, {} as any);
                     
                     // Basic validation
-                    if (!student.name || !student.rollNumber || !student.email) {
-                        throw new Error(`Row ${index + 2}: Missing required data (name, rollNumber, or email).`);
+                    if (!student.name || !student.rollNumber || !student.email || !student.gender) {
+                        throw new Error(`Row ${index + 2}: Missing required data (name, rollNumber, email, or gender).`);
                     }
                     if (!Object.values(Year).includes(student.year as Year)){
                         throw new Error(`Row ${index + 2}: Invalid year value "${student.year}". Must be one of: ${Object.values(Year).join(', ')}.`);
+                    }
+                    if (!Object.values(Gender).includes(student.gender as Gender)){
+                        throw new Error(`Row ${index + 2}: Invalid gender value "${student.gender}". Must be one of: Male, Female, Other.`);
                     }
 
                     return student as ParsedStudent;
@@ -130,8 +132,8 @@ export const BulkRegistrationPanel: React.FC<BulkRegistrationPanelProps> = ({ on
     };
     
     const handleDownloadTemplate = () => {
-        const headers = 'name,rollNumber,department,year,section,email,phoneNumber';
-        const exampleRow = 'John Doe,21A91A0501,CSE,1st Year,1,john.doe@example.com,9876543210';
+        const headers = 'name,rollNumber,department,year,section,email,phoneNumber,gender';
+        const exampleRow = 'John Doe,21A91A0501,CSE,1st Year,1,john.doe@example.com,9876543210,Male';
         const csvContent = `${headers}\n${exampleRow}`;
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
@@ -172,7 +174,8 @@ export const BulkRegistrationPanel: React.FC<BulkRegistrationPanelProps> = ({ on
                             <p className="font-bold">Instructions</p>
                             <ul className="list-disc list-inside text-sm mt-1 space-y-1">
                                 <li>Download the CSV template and fill in the student details.</li>
-                                <li>The file must contain the headers: `name`, `rollNumber`, `department`, `year`, `section`, `email`, `phoneNumber`.</li>
+                                <li>The file must contain the headers: `name`, `rollNumber`, `department`, `year`, `section`, `email`, `phoneNumber`, `gender`.</li>
+                                <li>Allowed gender values are: `Male`, `Female`, `Other`.</li>
                                 <li>Newly registered students will be assigned a default password in the format: `Pass@&lt;last-4-digits-of-roll-number&gt;`.</li>
                                 <li>Each new student will receive a verification email to complete their registration.</li>
                             </ul>

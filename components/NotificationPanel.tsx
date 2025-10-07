@@ -7,6 +7,7 @@ interface NotificationPanelProps {
     onMarkAsRead: (notificationId: string) => void;
     onMarkAllAsRead: () => void;
     onClose: () => void;
+    onNotificationClick: (notification: Notification) => void;
 }
 
 const BellIcon: React.FC<{className?: string}> = ({className}) => (
@@ -40,7 +41,7 @@ const timeSince = (date: number) => {
     return Math.floor(seconds) + "s ago";
 };
 
-export const NotificationPanel: React.FC<NotificationPanelProps> = ({ notifications, unreadCount, onMarkAsRead, onMarkAllAsRead, onClose }) => {
+export const NotificationPanel: React.FC<NotificationPanelProps> = ({ notifications, unreadCount, onMarkAsRead, onMarkAllAsRead, onClose, onNotificationClick }) => {
     return (
         <div className="absolute right-0 mt-2 w-80 max-w-sm bg-gray-800 rounded-lg shadow-lg border border-gray-700 z-50 origin-top-right animate-scale-in-menu">
             <header className="p-4 border-b border-gray-700 flex justify-between items-center">
@@ -58,25 +59,38 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({ notificati
                 ) : (
                     <ul>
                         {notifications.map(notif => (
-                            <li key={notif.id} className={`p-4 border-b border-gray-700/50 ${notif.isRead ? 'opacity-60' : 'bg-blue-900/20'}`}>
-                                <div className="flex items-start gap-3">
-                                    <div className="text-lg mt-1">{getIconForType(notif.type)}</div>
-                                    <div className="flex-grow">
-                                        {(notif.type === 'ANNOUNCEMENT' || notif.type === 'GROUP_INVITE') ? (
-                                            <>
-                                                <p className="text-xs text-gray-400">From: <span className="font-semibold text-gray-200">{notif.senderName}</span></p>
-                                                <p className="text-sm font-bold text-white mt-0.5">{notif.title}</p>
-                                            </>
-                                        ) : (
-                                            <p className="text-sm font-bold text-white">{notif.title}</p>
-                                        )}
-                                        <p className="text-sm text-gray-300 mt-1">{notif.message}</p>
-                                        <p className="text-xs text-gray-400 mt-2">{timeSince(notif.timestamp)}</p>
+                            <li key={notif.id} className={`border-b border-gray-700/50 ${notif.isRead ? 'opacity-60' : 'bg-blue-900/20'} ${notif.linkTo ? 'cursor-pointer hover:bg-gray-700/50' : ''}`}>
+                                <button
+                                    onClick={() => { if (notif.linkTo) { onNotificationClick(notif); onClose(); } }}
+                                    disabled={!notif.linkTo}
+                                    className="w-full text-left p-4 disabled:cursor-default"
+                                >
+                                    <div className="flex items-start gap-3">
+                                        <div className="text-lg mt-1">{getIconForType(notif.type)}</div>
+                                        <div className="flex-grow">
+                                            {(notif.type === 'ANNOUNCEMENT' || notif.type === 'GROUP_INVITE') ? (
+                                                <>
+                                                    <p className="text-xs text-gray-400">From: <span className="font-semibold text-gray-200">{notif.senderName}</span></p>
+                                                    <p className="text-sm font-bold text-white mt-0.5">{notif.title}</p>
+                                                </>
+                                            ) : (
+                                                <p className="text-sm font-bold text-white">{notif.title}</p>
+                                            )}
+                                            <p className="text-sm text-gray-300 mt-1">{notif.message}</p>
+                                            <div className="flex justify-between items-center mt-2">
+                                                <p className="text-xs text-gray-400">{timeSince(notif.timestamp)}</p>
+                                                {!notif.isRead && (
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); onMarkAsRead(notif.id); }} 
+                                                        className="text-xs text-blue-400 hover:underline"
+                                                    >
+                                                        Mark as read
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
                                     </div>
-                                    {!notif.isRead && (
-                                        <button onClick={() => onMarkAsRead(notif.id)} className="w-3 h-3 bg-blue-500 rounded-full flex-shrink-0 mt-1" title="Mark as read"></button>
-                                    )}
-                                </div>
+                                </button>
                             </li>
                         ))}
                     </ul>

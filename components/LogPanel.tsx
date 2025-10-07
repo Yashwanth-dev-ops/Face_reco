@@ -1,6 +1,4 @@
 
-
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { getActionLogs } from '../services/logService';
 import { LogEntry } from '../services/logService';
@@ -132,7 +130,6 @@ export const LogPanel: React.FC<LogPanelProps> = ({ adminDirectory }) => {
                     className="w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-white transition"
                 >
                     <option value="ALL">All Admins</option>
-                    {/* FIX: Add explicit type to map callback parameter to avoid 'unknown' type inference. */}
                     {Array.from(adminDirectory.values()).map((admin: AdminInfo) => (
                         <option key={admin.idNumber} value={admin.idNumber}>{admin.name}</option>
                     ))}

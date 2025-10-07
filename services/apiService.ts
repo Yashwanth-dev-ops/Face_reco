@@ -14,10 +14,10 @@ import {
     loadSharedNotes, saveSharedNotes,
     loadNotifications, saveNotifications
 } from './storageService';
-import { StudentInfo, AdminInfo, AttendanceRecord, Emotion, Designation, VerificationToken, PasswordResetToken, TimeTableEntry, LeaveRecord, Conversation, ChatMessage, Holiday, Year, StudyGroup, SharedNote, GroupChatMessage, NoteRating, AttendanceAnomaly, GroupTask, GroupMemberRole, GroupResource, Notification, GroupEvent, KnowledgeDocument } from '../types';
+import { StudentInfo, AdminInfo, AttendanceRecord, Emotion, Designation, VerificationToken, PasswordResetToken, TimeTableEntry, LeaveRecord, Conversation, ChatMessage, Holiday, Year, StudyGroup, SharedNote, GroupChatMessage, NoteRating, AttendanceAnomaly, GroupTask, GroupMemberRole, GroupResource, Notification, GroupEvent, KnowledgeDocument, Gender } from '../types';
 import { logAdminAction } from './logService';
 import { sendVerificationEmail, sendPasswordResetEmail, sendUnblockNotificationEmail, sendLeaveNotificationEmail, sendHolidayNotificationEmail, sendLeaveStatusNotificationEmail } from './emailService';
-import { suggestSubstituteTeacher, rescheduleClass, suggestStudyTime as geminiSuggestStudyTime, summarizeNoteContent as geminiSummarizeNote, analyzeAttendanceAnomalies, askAI } from './geminiService';
+import { suggestSubstituteTeacher, rescheduleClass, suggestStudyTime as geminiSuggestStudyTime, summarizeNoteContent as geminiSummarizeNote, analyzeAttendanceAnomalies, askAI, recognizeFace } from './geminiService';
 import * as knowledgeBaseService from './knowledgeBaseService';
 
 
@@ -737,16 +737,15 @@ export const sendMessage = (senderId: string, receiverId: string, content: strin
         const conversationId = [senderId, receiverId].sort().join('_');
         let convo = conversations.find(c => c.id === conversationId);
 
-        const adminDirectory = await getAdminDirectory();
         const senderInfo = await getUserById(senderId);
 
         const newMessage: ChatMessage = {
-            id: `msg-${Date.now()}`,
+            id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
             senderId,
             timestamp: Date.now(),
             content,
-            isPriority: isPriority && adminDirectory.has(senderId), // Only admins can send priority messages
-            status: 'read', // Simulate that the message is sent, delivered, and read
+            isPriority: isPriority && senderInfo?.userType === 'ADMIN',
+            status: 'read',
             file,
         };
 
@@ -763,15 +762,15 @@ export const sendMessage = (senderId: string, receiverId: string, content: strin
             conversations.push(convo);
         }
         
-        if (!suppressNotification) {
-            // Create a notification for the recipient
+        if (!suppressNotification && senderInfo) {
             createNotification({
                 recipientId: receiverId,
                 senderId: senderId,
-                senderName: senderInfo?.name || 'Unknown User',
+                senderName: senderInfo.name,
                 type: 'DIRECT_MESSAGE',
-                title: `New Message from ${senderInfo?.name}`,
-                message: content ? (content.substring(0, 100) + (content.length > 100 ? '...' : '')) : 'Sent a file.',
+                title: `New Message from ${senderInfo.name}`,
+                message: content ? (content.substring(0, 100) + (content.length > 100 ? '...' : '')) : (file ? `Sent: ${file.name}` : 'Sent an attachment.'),
+                linkTo: `CHAT/${convo.id}/${newMessage.id}`
             });
         }
 
@@ -839,20 +838,10 @@ export const sendBroadcast = async (adminId: string, target: string, title: stri
         for (const id of recipientIds) {
             // Don't send to self as part of the main group
             if (id === adminId) continue;
-
-            // Students get a direct message to appear on noticeboard AND a notification
-            if (allStudents.has(id)) {
-                await sendMessage(adminId, id, `[Broadcast] ${title}: ${message}`, undefined, true, true);
-            }
             
-            createNotification({
-                recipientId: id,
-                senderId: adminId,
-                senderName: sender.name,
-                type: 'ANNOUNCEMENT',
-                title: title,
-                message: message,
-            });
+            // This now creates a DM and a linked notification
+            const messageContent = `[Broadcast: ${title}]\n\n${message}`;
+            await sendMessage(adminId, id, messageContent, undefined, true, false);
         }
 
         // Send audit notifications to all other admins
@@ -1088,7 +1077,7 @@ export const deleteGroupMessage = (groupId: string, messageId: string, requestor
             if (!isSender && !isGroupAdmin) {
                 return reject(new Error("You do not have permission to delete this message for everyone."));
             }
-            if (!isRecent && !isGroupAdmin) { // Admins can delete anytime
+            if (isSender && !isRecent && !isGroupAdmin) { // Senders can only delete recent, admins anytime
                return reject(new Error("You can only delete recent messages for everyone."));
             }
             // Soft delete
@@ -1263,7 +1252,6 @@ export const toggleTask = (groupId: string, taskId: string, userId: string): Pro
     });
 };
 
-// FIX: Implement missing functions for student-led group management.
 export const deleteStudyGroupByStudent = (groupId: string, studentRollNumber: string): Promise<{ updatedGroups: StudyGroup[]; updatedStudents: Map<string, StudentInfo> }> => {
     return new Promise((resolve, reject) => {
         setTimeout(() => {
@@ -1636,6 +1624,7 @@ export const getStudentDirectory = (): Promise<Map<string, StudentInfo>> => {
     // Helper function to create a demo student
     const createDemoStudent = (id: string, name: string, dept: string, year: Year, section: string, email: string) => {
         if (!students.has(id)) {
+            const isFemale = ['Beth', 'Dana', 'Monica'].some(n => name.includes(n));
             students.set(id, {
                 name: name,
                 rollNumber: id,
@@ -1645,6 +1634,7 @@ export const getStudentDirectory = (): Promise<Map<string, StudentInfo>> => {
                 email: email,
                 password: 'student',
                 phoneNumber: '9876543210',
+                gender: isFemale ? Gender.Female : Gender.Male,
                 blockExpiresAt: null,
                 blockedBy: null,
                 isVerified: true,
@@ -1695,6 +1685,7 @@ export const getAdminDirectory = (): Promise<Map<string, AdminInfo>> => {
             department: 'Administration',
             designation: Designation.Principal,
             phoneNumber: '1234567890',
+            gender: Gender.Male,
             isBlocked: false,
             isVerified: true, // Auto-verify the default admin
             isPresentToday: true,
@@ -1707,6 +1698,7 @@ export const getAdminDirectory = (): Promise<Map<string, AdminInfo>> => {
             department: 'Administration',
             designation: Designation.Chairman,
             phoneNumber: '1234567890',
+            gender: Gender.Male,
             isBlocked: false,
             isVerified: true,
             isPresentToday: true,
@@ -1725,6 +1717,7 @@ export const getAdminDirectory = (): Promise<Map<string, AdminInfo>> => {
             department: 'CSE',
             designation: Designation.HOD,
             phoneNumber: '1112223333',
+            gender: Gender.Male,
             isBlocked: false,
             isVerified: true,
             isPresentToday: true,
@@ -1742,6 +1735,7 @@ export const getAdminDirectory = (): Promise<Map<string, AdminInfo>> => {
             department: 'ECE',
             designation: Designation.Teacher,
             phoneNumber: '4445556666',
+            gender: Gender.Female,
             isBlocked: false,
             isVerified: true,
             isPresentToday: true,
@@ -1759,6 +1753,7 @@ export const getAdminDirectory = (): Promise<Map<string, AdminInfo>> => {
             department: 'Administration',
             designation: Designation.ExamsOffice,
             phoneNumber: '9998887776',
+            gender: Gender.Other,
             isBlocked: false,
             isVerified: true,
             isPresentToday: true,
@@ -1779,6 +1774,7 @@ export const getAdminDirectory = (): Promise<Map<string, AdminInfo>> => {
                 department: 'CSE',
                 designation: Designation.Teacher,
                 phoneNumber: `123123123${i}`,
+                gender: i % 2 === 0 ? Gender.Female : Gender.Male,
                 isBlocked: false,
                 isVerified: true,
                 isPresentToday: true,
@@ -1804,6 +1800,7 @@ export const getAdminDirectory = (): Promise<Map<string, AdminInfo>> => {
                 year: year,
                 section: 'All Sections', // For all sections of that year
                 phoneNumber: `456456456${yearNumber}`,
+                gender: yearNumber % 2 === 0 ? Gender.Female : Gender.Male,
                 isBlocked: false,
                 isVerified: true,
                 isPresentToday: true,
@@ -1824,7 +1821,6 @@ export const getAttendance = (): Promise<AttendanceRecord[]> => Promise.resolve(
 export const getDepartments = (): Promise<string[]> => Promise.resolve(loadDepartments());
 export const getTimeTable = (): Promise<TimeTableEntry[]> => Promise.resolve(loadTimeTable());
 export const getHolidays = (): Promise<Holiday[]> => Promise.resolve(loadHolidays());
-// Fix: Add getLeaveRecords function to expose leave data loading.
 export const getLeaveRecords = (): Promise<LeaveRecord[]> => Promise.resolve(loadLeaveRecords());
 
 export const getStudyGroups = (): Promise<StudyGroup[]> => {
@@ -2074,9 +2070,27 @@ export const linkFaceToStudent = (persistentId: number, rollNumber: string): Pro
     });
 };
 
-export const linkNewFaceForStudent = (rollNumber: string): Promise<Map<number, string>> => {
-    return new Promise((resolve) => {
-        setTimeout(() => {
+export const verifyAndLinkNewFaceForStudent = (rollNumber: string, livePhotoBase64: string): Promise<Map<number, string>> => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const students = loadStudentDirectory();
+            const student = students.get(rollNumber.toUpperCase());
+            if (!student) {
+                return reject(new Error("Student profile not found."));
+            }
+            if (!student.photoBase64) {
+                return reject(new Error("Your profile photo is missing. Please complete onboarding or contact an administrator."));
+            }
+
+            // Verify the live photo against the registered photo using Gemini
+            const { matchedUserId, confidence } = await recognizeFace(livePhotoBase64, [{ id: rollNumber, photoBase64: student.photoBase64 }]);
+            
+            const confidenceThreshold = 0.75; // Use a reasonable threshold for self-verification
+            if (matchedUserId !== rollNumber || confidence < confidenceThreshold) {
+                return reject(new Error("Face does not match your registered profile. Please try again in a well-lit area."));
+            }
+
+            // Verification successful, now link the face.
             const links = loadFaceLinks();
             
             // Find and remove any existing links for this student to allow re-linking.
@@ -2088,15 +2102,17 @@ export const linkNewFaceForStudent = (rollNumber: string): Promise<Map<number, s
             }
             pidsToDelete.forEach(pid => links.delete(pid));
 
-            // FIX: Add generic type to Array.from to ensure correct type inference.
+            // Generate a new persistent ID
             const existingIds = Array.from<number>(links.keys());
-            // Use Math.max(0, ...) to handle empty array case gracefully.
             const newId = existingIds.length > 0 ? Math.max(0, ...existingIds) + 1 : 1;
             
             links.set(newId, rollNumber);
             saveFaceLinks(links);
             resolve(links);
-        }, API_LATENCY);
+
+        } catch (err) {
+            reject(err);
+        }
     });
 };
 
@@ -2502,7 +2518,6 @@ export const toggleAdminPresence = (idNumber: string, adminId: string): Promise<
     });
 };
 
-// Fix: Add functions for the mark prediction feature
 export const placePrediction = (rollNumber: string, subject: string, midTerm: 'mid1' | 'mid2', predictedMarks: number): Promise<StudentInfo> => {
     return new Promise((resolve, reject) => {
         setTimeout(() => {

@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { StudentInfo, AdminInfo, Designation, Year, AttendanceRecord, TimeTableEntry, LeaveRecord, Conversation, AttendanceAnomaly, StudyGroup, Notification, KnowledgeDocument } from '../types';
 import { MidTermAssessment } from './MidTermAssessment';
@@ -71,6 +70,9 @@ interface AdminDashboardProps {
     onMarkAllNotificationsAsRead: () => void;
     onSendBroadcast: (target: string, title: string, message: string) => Promise<void>;
     onQueryKnowledgeBase: (query: string) => Promise<{ answer: string; sources: KnowledgeDocument[] }>;
+    onNotificationClick: (notification: Notification) => void;
+    navigationTarget: { type: string; id: string; secondaryId?: string } | null;
+    onNavigationComplete: () => void;
 }
 
 const handleMouseMove = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -183,12 +185,18 @@ const UserManagementTable: React.FC<{
 };
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
-    const { currentUser, studentDirectory, adminDirectory, departments, timeTable, leaveRecords, conversations, onLogout, onNavigateToSettings, notifications, onMarkNotificationAsRead, onMarkAllNotificationsAsRead, onSendBroadcast, onQueryKnowledgeBase } = props;
+    const { currentUser, studentDirectory, adminDirectory, departments, timeTable, leaveRecords, conversations, onLogout, onNavigateToSettings, notifications, onMarkNotificationAsRead, onMarkAllNotificationsAsRead, onSendBroadcast, onQueryKnowledgeBase, onNotificationClick, navigationTarget, onNavigationComplete } = props;
     const [activeTab, setActiveTab] = useState('students');
     const [substituteModalEntry, setSubstituteModalEntry] = useState<TimeTableEntry | null>(null);
     const [downloadModalOpen, setDownloadModalOpen] = useState(false);
     const [blockStudentTarget, setBlockStudentTarget] = useState<StudentInfo | null>(null);
     const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
+
+    useEffect(() => {
+        if (navigationTarget?.type === 'CHAT') {
+            setActiveTab('communications');
+        }
+    }, [navigationTarget]);
 
     // RBAC Checks
     const isHighPrivilege = useMemo(() => [Designation.Principal, Designation.VicePrincipal, Designation.Chairman].includes(currentUser.designation), [currentUser.designation]);
@@ -207,8 +215,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
     const [staffStatusFilter, setStaffStatusFilter] = useState('ALL');
     const [staffPresenceFilter, setStaffPresenceFilter] = useState('ALL');
 
-    // FIX: This wrapper is created to satisfy the prop type of AttendanceInsightsPanel, which does not expect a 'file' parameter.
-    // The type error was likely mis-reported on a different component.
     const handleSendMessageNoFile = (receiverId: string, content: string, isPriority?: boolean) => {
         return props.onSendMessage(receiverId, content, undefined, isPriority);
     };
@@ -367,7 +373,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
             case 'logs':
                 return <LogPanel adminDirectory={adminDirectory} />;
             case 'communications':
-                return <CommunicationPanel currentUser={{ ...currentUser, userType: 'ADMIN' }} conversations={conversations} onSendMessage={props.onSendMessage} studentDirectory={studentDirectory} adminDirectory={adminDirectory} timeTable={timeTable} onQueryKnowledgeBase={props.onQueryKnowledgeBase} />;
+                return <CommunicationPanel currentUser={{ ...currentUser, userType: 'ADMIN' }} conversations={conversations} onSendMessage={props.onSendMessage} studentDirectory={studentDirectory} adminDirectory={adminDirectory} timeTable={timeTable} onQueryKnowledgeBase={props.onQueryKnowledgeBase} navigationTarget={navigationTarget} onNavigationComplete={onNavigationComplete} />;
             default:
                 return null;
         }
@@ -407,6 +413,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
                         notifications={notifications}
                         onMarkAsRead={onMarkNotificationAsRead}
                         onMarkAllAsRead={onMarkAllNotificationsAsRead}
+                        onNotificationClick={onNotificationClick}
                     />
                     <button onClick={() => setIsBroadcastModalOpen(true)} className="px-4 py-2 rounded-lg font-semibold text-white bg-indigo-600 hover:bg-indigo-500 transition-all">Broadcast</button>
                     <button onClick={() => setDownloadModalOpen(true)} className="px-4 py-2 rounded-lg font-semibold text-white bg-gray-700 hover:bg-gray-600 transition-all">Download Report</button>

@@ -14,7 +14,7 @@ This document provides a comprehensive overview of the Krishna University Face A
 -   **Role-Based Access Control (RBAC):** Features distinct dashboards and granular permissions for different user roles (Student, Teacher, Incharge, HOD, Principal, Chairman).
 -   **Comprehensive User Management:** Admins can register users (individually or in bulk via CSV), manage profiles, and control account access with a nuanced blocking system (temporary/permanent).
 -   **Full-Fledged Community Hub:**
-    -   **Study Groups:** Students can create, join, and manage public or private (invite-only) study groups.
+    -   **Study Groups:** Students can create, join, and manage public or private (invite-only) study groups. Groups can be set as mixed-gender, boys-only, or girls-only to provide comfortable study environments.
     -   **Rich Group Chat:** Includes features like replies, file sharing, polls, audio messages, message deletion (for self/all), and message pinning by group admins.
     -   **Task Management:** Shared to-do lists within groups.
     -   **Notes Exchange:** A platform for students to upload and rate text-based study notes, with AI-powered summarization.
@@ -140,9 +140,9 @@ Components are organized by function, from full-page "screens" to smaller, reusa
 
 This file provides strong typing for all major data entities, acting as the schema for the application.
 
--   `StudentInfo` & `AdminInfo`: Define the shape of user objects, including properties for RBAC (`designation`) and status (`blockExpiresAt`, `isPresentToday`).
+-   `StudentInfo` & `AdminInfo`: Define the shape of user objects, including properties for RBAC (`designation`), status (`blockExpiresAt`, `isPresentToday`), and identity (`gender`).
 -   `Notification`: The structure for all user notifications, including targeted (`recipientId`) and global (`ALL`) alerts.
--   `StudyGroup`: A complex type defining a study group, containing arrays for `messages`, `tasks`, `resources`, `members`, and `pendingMembers`.
+-   `StudyGroup`: A complex type defining a study group, containing arrays for `messages`, `tasks`, `resources`, `members`, and `pendingMembers`. Also includes a `genderRestriction` field to create single-gender groups as a security/comfort feature.
 -   `GroupChatMessage`: Defines a chat message, with optional fields for `file`, `poll`, `audio`, and `replyToMessageId`.
 -   `SharedNote`: The structure for a note in the Notes Exchange, including its `fileDataUrl` and an array of `ratings`.
 -   `MarkPrediction`: Tracks a student's mark prediction, the AI's prediction, and whether a reward has been claimed.

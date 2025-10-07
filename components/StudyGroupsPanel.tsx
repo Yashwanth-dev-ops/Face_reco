@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { StudentInfo, StudyGroup, GroupTask, GroupEvent } from '../types';
+import { StudentInfo, StudyGroup, GroupTask, GroupEvent, Gender } from '../types';
 import { CreateStudyGroupModal } from './CreateStudyGroupModal';
 import { UsersIcon } from './UsersIcon';
 import { StudyGroupChatModal } from './StudyGroupChatModal';
@@ -202,7 +202,11 @@ export const StudyGroupsPanel: React.FC<StudyGroupsPanelProps> = (props) => {
                                         <div className="flex items-start">
                                             <span className="text-3xl mr-4 mt-1">{group.icon}</span>
                                             <div className="flex-grow">
-                                                <p className="font-bold text-gray-900 dark:text-white">{group.name}</p>
+                                                <div className="flex items-center gap-2">
+                                                    <p className="font-bold text-gray-900 dark:text-white">{group.name}</p>
+                                                    {group.genderRestriction === Gender.Male && <span title="Boys only" className="text-xs">♂️</span>}
+                                                    {group.genderRestriction === Gender.Female && <span title="Girls only" className="text-xs">♀️</span>}
+                                                </div>
                                                 <p className="text-sm text-blue-500 dark:text-blue-400">{group.subject}</p>
                                             </div>
                                         </div>
@@ -232,16 +236,26 @@ export const StudyGroupsPanel: React.FC<StudyGroupsPanelProps> = (props) => {
                         </div>
                         <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
                             {findableGroups.length > 0 ? findableGroups.map(group => {
-                                const canJoin = group.department === currentUser.department && group.year === currentUser.year;
+                                const canJoinByDept = group.department === currentUser.department && group.year === currentUser.year;
+                                const canJoinByGender = !group.genderRestriction || group.genderRestriction === currentUser.gender;
+                                const canJoin = canJoinByDept && canJoinByGender;
+
                                 const joinDisabled = joinLoading[group.id] || group.members.length >= group.maxSize || !canJoin;
-                                const joinTitle = !canJoin ? 'You can only self-join groups from your department and year. Ask a group admin for an invite.' : group.members.length >= group.maxSize ? 'Group is full' : 'Join this group';
+                                let joinTitle = 'Join this group';
+                                if (group.members.length >= group.maxSize) joinTitle = 'Group is full';
+                                else if (!canJoinByDept) joinTitle = 'You can only self-join groups from your department and year. Ask a group admin for an invite.';
+                                else if (!canJoinByGender) joinTitle = `This is a ${group.genderRestriction}s-only group.`;
 
                                 return (
                                     <div key={group.id} className="bg-white dark:bg-gray-800/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
                                         <div className="flex items-start">
                                             <span className="text-3xl mr-4 mt-1">{group.icon}</span>
                                             <div className="flex-grow">
-                                                <p className="font-bold text-gray-900 dark:text-white">{group.name}</p>
+                                                <div className="flex items-center gap-2">
+                                                    <p className="font-bold text-gray-900 dark:text-white">{group.name}</p>
+                                                    {group.genderRestriction === Gender.Male && <span title="Boys only" className="text-xs">♂️</span>}
+                                                    {group.genderRestriction === Gender.Female && <span title="Girls only" className="text-xs">♀️</span>}
+                                                </div>
                                                 <p className="text-sm text-blue-500 dark:text-blue-400">{group.subject}</p>
                                                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{group.department} / {group.year} {group.section ? `/ Sec ${group.section}` : ''}</p>
                                                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">{group.description}</p>

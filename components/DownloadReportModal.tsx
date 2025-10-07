@@ -1,13 +1,9 @@
 
-
-
-
 import React, { useState } from 'react';
 import { Year, AdminInfo, Designation } from '../types';
 
 interface DownloadReportModalProps {
     onClose: () => void;
-    // FIX: Update onSubmit to allow 'ALL' for the year parameter to match filter logic.
     onSubmit: (department: string, year: Year | 'ALL', section: string, time: string) => void;
     title: string;
     departments: string[];
@@ -30,7 +26,6 @@ export const DownloadReportModal: React.FC<DownloadReportModalProps> = ({ onClos
     const isDeptSelectionDisabled = [Designation.HOD, Designation.Incharge].includes(currentUser.designation);
     
     const [department, setDepartment] = useState(isDeptSelectionDisabled ? currentUser.department : 'ALL');
-    // FIX: Change year state to allow 'ALL' and set it as default.
     const [year, setYear] = useState<Year | 'ALL'>('ALL');
     const [section, setSection] = useState('ALL');
     const [time, setTime] = useState('ALL');
@@ -81,12 +76,10 @@ export const DownloadReportModal: React.FC<DownloadReportModalProps> = ({ onClos
                             <select
                                 id="year"
                                 value={year}
-                                // FIX: Update onChange to handle 'ALL' for year.
                                 onChange={(e) => setYear(e.target.value as Year | 'ALL')}
                                 className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-white transition"
                                 required
                             >
-                                {/* FIX: Add 'All Years' option. */}
                                 <option value="ALL">All Years</option>
                                 {Object.values(Year).map(y => <option key={y} value={y}>{y}</option>)}
                             </select>

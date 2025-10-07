@@ -25,33 +25,33 @@ const handleMouseMove = (e: React.MouseEvent<HTMLButtonElement>) => {
 };
 
 export const VerificationScreen: React.FC<VerificationScreenProps> = ({ userToVerify, onVerified, onBackToLogin }) => {
-    const [code, setCode] = useState('');
+    const [token, setToken] = useState('');
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [loading, setLoading] = useState(false);
     const [resendLoading, setResendLoading] = useState(false);
     const [resendCooldown, setResendCooldown] = useState(0);
 
+    // Fix: Replaced NodeJS.Timeout with a safer, browser-compatible useEffect hook for the cooldown timer.
     useEffect(() => {
-        // FIX: Change type from NodeJS.Timeout to ReturnType<typeof setTimeout> for browser compatibility.
-        let timer: ReturnType<typeof setTimeout>;
         if (resendCooldown > 0) {
-            timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+            const timerId = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+            return () => clearTimeout(timerId);
         }
-        return () => clearTimeout(timer);
     }, [resendCooldown]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
         setSuccess('');
-        if (code.length !== 6) {
-            setError("Please enter the 6-digit code.");
+        if (token.length !== 6) {
+            setError("Please enter the 6-digit verification code.");
             return;
         }
+
         setLoading(true);
         try {
-            await apiService.verifyUser(userToVerify.identifier, code, userToVerify.userType);
+            await apiService.verifyUser(userToVerify.identifier, token, userToVerify.userType);
             setSuccess("Account verified successfully! Redirecting to login...");
             setTimeout(() => {
                 onVerified();
@@ -64,15 +64,14 @@ export const VerificationScreen: React.FC<VerificationScreenProps> = ({ userToVe
     };
     
     const handleResend = async () => {
-        if (resendLoading || resendCooldown > 0) return;
-        
+        if (resendCooldown > 0) return;
+        setResendLoading(true);
         setError('');
         setSuccess('');
-        setResendLoading(true);
         try {
             await apiService.resendVerificationToken(userToVerify.identifier, userToVerify.userType);
-            setSuccess("A new verification code has been sent.");
-            setResendCooldown(60); // 60 second cooldown
+            setSuccess("A new verification code has been sent. Check the Mock Inbox.");
+            setResendCooldown(60);
         } catch (err) {
              setError(err instanceof Error ? err.message : "Failed to resend code.");
         } finally {
@@ -83,49 +82,42 @@ export const VerificationScreen: React.FC<VerificationScreenProps> = ({ userToVe
     return (
         <div className="w-full max-w-md mx-auto animate-slide-up">
             <div className="text-center mb-8">
-                <img src="https://krucet.ac.in/wp-content/uploads/2020/09/cropped-kru-150-round-non-transparent-1.png" alt="Krishna University Logo" className="w-24 h-24 mx-auto mb-4 rounded-full shadow-lg" />
                 <h1 className="text-3xl font-bold text-white">Verify Your Account</h1>
-                <p className="text-lg text-gray-400 mt-1">A verification code has been sent.</p>
+                <p className="text-lg text-gray-400 mt-1">A verification code was sent to your email.</p>
+                <p className="text-sm text-gray-500 mt-1">(Check the "Mock Inbox" at the bottom right)</p>
             </div>
             <div className="bg-gray-800/50 rounded-2xl shadow-2xl p-8 border border-gray-700 backdrop-blur-sm">
-                
-                 {/* This message guides the user during the simulation */}
-                 <div className="bg-gray-900/50 p-3 rounded-lg mb-6 text-center">
-                    <p className="text-sm text-yellow-300">
-                        Check the <span className="font-bold">Mock Inbox icon</span> (bottom right) for your verification code.
-                    </p>
-                </div>
-
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
-                        <label htmlFor="code" className="block text-sm font-medium text-gray-300 mb-1 text-center">
-                            Enter 6-Digit Code
+                        <label htmlFor="token" className="block text-sm font-medium text-gray-300 mb-1">
+                            Verification Code
                         </label>
                         <input
                             type="text"
-                            id="code"
-                            value={code}
-                            onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
-                            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-3 text-white text-center text-2xl tracking-[0.5em] transition"
+                            id="token"
+                            value={token}
+                            onChange={(e) => setToken(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                            maxLength={6}
+                            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white transition text-center text-2xl tracking-[.5em]"
                             required
                             autoFocus
                         />
                     </div>
-                    
+
                     <div className="text-center text-sm h-5">
                         {error && <p className="text-red-400">{error}</p>}
                         {success && <p className="text-green-400">{success}</p>}
                     </div>
-                    
+
                     <div className="pt-2">
-                        <button 
-                            type="submit" 
+                        <button
+                            type="submit"
                             disabled={loading || !!success}
                             onMouseMove={handleMouseMove}
-                            className="btn-animated w-full px-6 py-3 rounded-lg font-semibold text-white bg-blue-600 transition-colors duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-blue-500 disabled:bg-blue-800 disabled:cursor-not-allowed flex items-center justify-center shadow-lg"
+                            className="btn-animated w-full px-6 py-3 rounded-lg font-semibold text-white bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-blue-500 disabled:bg-blue-800 disabled:cursor-not-allowed flex items-center justify-center shadow-lg"
                         >
                             {loading ? <LoadingSpinner /> : (
-                                <span className="btn-content">
+                                 <span className="btn-content">
                                     <span className="btn-dot"></span>
                                     <span>Verify Account</span>
                                 </span>
@@ -133,21 +125,14 @@ export const VerificationScreen: React.FC<VerificationScreenProps> = ({ userToVe
                         </button>
                     </div>
                 </form>
-                <div className="text-center text-sm text-gray-400 mt-6">
-                    <p>Didn't receive a code?</p>
-                    <button 
-                        onClick={handleResend} 
-                        disabled={resendLoading || resendCooldown > 0}
-                        className="font-semibold text-blue-400 hover:underline disabled:text-gray-500 disabled:cursor-not-allowed disabled:no-underline"
-                    >
-                        {resendLoading ? 'Sending...' : (resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend Code')}
+                <div className="text-center mt-6 border-t border-gray-700 pt-4 space-y-2">
+                    <button onClick={handleResend} disabled={resendLoading || resendCooldown > 0} className="text-sm text-blue-400 hover:underline disabled:text-gray-500 disabled:cursor-not-allowed">
+                        {resendLoading ? "Sending..." : (resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : "Didn't receive a code? Resend")}
+                    </button>
+                    <button onClick={onBackToLogin} className="block w-full text-sm text-gray-400 hover:text-white hover:underline">
+                        &larr; Back to Login
                     </button>
                 </div>
-                 <div className="text-center mt-6 border-t border-gray-700 pt-4">
-                     <button onClick={onBackToLogin} className="text-sm text-gray-400 hover:text-white hover:underline">
-                        Back to Login
-                    </button>
-                 </div>
             </div>
         </div>
     );

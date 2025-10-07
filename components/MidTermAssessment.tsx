@@ -1,7 +1,4 @@
 
-
-
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { StudentInfo, AdminInfo, Year, Designation } from '../types';
 import { MarkUpdate } from '../services/apiService';
@@ -77,10 +74,8 @@ export const MidTermAssessment: React.FC<MidTermAssessmentProps> = ({ currentUse
 
     const filteredStudents = useMemo(() => {
         if (!studentsLoaded) return [];
-        // FIX: Explicitly type the iterator variable `s` to StudentInfo to prevent it from being inferred as `unknown`.
         return Array.from(studentDirectory.values()).filter(
             (s: StudentInfo) => s.year === year && s.department === department && (section === 'ALL' || s.section === section)
-        // FIX: Explicitly type the iterator variables `a` and `b` to StudentInfo to prevent them from being inferred as `unknown`.
         ).sort((a: StudentInfo, b: StudentInfo) => a.rollNumber.localeCompare(b.rollNumber));
     }, [studentDirectory, year, department, section, studentsLoaded]);
 
@@ -92,11 +87,9 @@ export const MidTermAssessment: React.FC<MidTermAssessmentProps> = ({ currentUse
             return;
         }
         const newMarks = new Map<string, string>();
-        // FIX: Explicitly type the iterator variable `s` to StudentInfo to prevent it from being inferred as `unknown`.
         const students = Array.from(studentDirectory.values()).filter(
             (s: StudentInfo) => s.year === year && s.department === department && (section === 'ALL' || s.section === section)
         );
-        // FIX: Explicitly type the iterator variable `student` to StudentInfo to prevent it from being inferred as `unknown`.
         students.forEach((student: StudentInfo) => {
             const existingMark = student.marks?.find(m => m.subject.toLowerCase() === subject.trim().toLowerCase());
             if (existingMark && existingMark[midTerm] !== null) {

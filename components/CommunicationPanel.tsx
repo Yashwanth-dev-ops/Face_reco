@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Conversation, ChatMessage, AdminInfo, StudentInfo, Designation, TimeTableEntry, KnowledgeDocument } from '../types';
 import { ToggleSwitch } from './ToggleSwitch';
@@ -19,7 +18,7 @@ type CurrentUser = (AdminInfo & { userType: 'ADMIN' }) | (StudentInfo & { userTy
 interface CommunicationPanelProps {
     currentUser: CurrentUser;
     conversations: Conversation[];
-    onSendMessage: (receiverId: string, content: string, file?: { name: string; url: string }, isPriority?: boolean) => Promise<void>;
+    onSendMessage: (receiverId: string, content: string, file?: { name: string; url: string }, isPriority?: boolean, replyToMessageId?: string) => Promise<void>;
     studentDirectory: Map<string, StudentInfo>;
     adminDirectory: Map<string, AdminInfo>;
     timeTable?: TimeTableEntry[];
@@ -141,6 +140,8 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
     const [aiChat, setAiChat] = useState<{ query: string; response: AIResponse } | null>(null);
     const [viewingSource, setViewingSource] = useState<KnowledgeDocument | null>(null);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+
 
     const typingTimeoutRef = useRef<number | null>(null);
     const chatEndRef = useRef<HTMLDivElement>(null);
@@ -294,7 +295,7 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
                 const reader = new FileReader();
                 reader.onload = async (e) => {
                     const fileDataUrl = e.target?.result as string;
-                    await onSendMessage(receiverId!, newMessage.trim(), { name: file.name, url: fileDataUrl }, isPriority);
+                    await onSendMessage(receiverId!, newMessage.trim(), { name: file.name, url: fileDataUrl }, isPriority, replyingTo?.id);
                     setNewMessage('');
                     setFile(null);
                     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -302,7 +303,7 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
                 };
                 reader.readAsDataURL(file);
             } else {
-                await onSendMessage(receiverId, newMessage.trim(), undefined, isPriority);
+                await onSendMessage(receiverId, newMessage.trim(), undefined, isPriority, replyingTo?.id);
                 setNewMessage('');
                 setIsPriority(false);
             }
@@ -311,6 +312,7 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
             console.error("Failed to send message:", error);
         } finally {
             setIsLoading(false);
+            setReplyingTo(null);
         }
     };
     
@@ -544,7 +546,7 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
                                     {groupContent.map(group => {
                                         if (group.type === 'date') return <DateSeparator key={group.id} date={new Date(group.date)} />;
                                         return group.messages.map((msg, index) => (
-                                            <MessageBubble key={msg.id} message={msg} isOwn={msg.senderId === currentUserId} senderType={getParticipantInfo(msg.senderId)?.type || 'Student'} isFirstInGroup={index === 0} isLastInGroup={index === group.messages.length - 1} />
+                                            <MessageBubble key={msg.id} message={msg} allMessages={selectedConversation.messages} isOwn={msg.senderId === currentUserId} senderType={getParticipantInfo(msg.senderId)?.type || 'Student'} isFirstInGroup={index === 0} isLastInGroup={index === group.messages.length - 1} onReply={setReplyingTo} onDelete={() => {}} />
                                         ));
                                     })}
                                      {aiChat && (
@@ -562,6 +564,15 @@ export const CommunicationPanel: React.FC<CommunicationPanelProps> = ({
                                 </main>
                                 
                                 <footer className="relative p-3 border-t border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-900/50 flex-shrink-0">
+                                    {replyingTo && (
+                                        <div className="bg-gray-200 dark:bg-gray-700/50 p-2 border-l-4 border-blue-500 flex justify-between items-center text-sm mb-2 rounded-md">
+                                            <div>
+                                                <p className="text-gray-600 dark:text-gray-400">Replying to <span className="font-bold text-blue-500 dark:text-blue-300">{replyingTo.senderId === currentUserId ? 'yourself' : otherParticipant?.name}</span></p>
+                                                <p className="text-gray-800 dark:text-gray-200 italic truncate">{replyingTo.content || 'Attachment'}</p>
+                                            </div>
+                                            <button onClick={() => setReplyingTo(null)} className="p-1 rounded-full hover:bg-gray-300 dark:hover:bg-gray-600 text-xl">&times;</button>
+                                        </div>
+                                    )}
                                     {showEmojiPicker && <EmojiPicker ref={emojiPickerRef} onEmojiSelect={(emoji) => { setNewMessage(prev => prev + emoji); }} />}
                                     {currentUser.userType === 'ADMIN' && (
                                         <div className="flex items-center justify-end gap-2 mb-2"><label htmlFor="priority-toggle" className="text-xs font-medium text-gray-500 dark:text-gray-400">Mark as Important</label><ToggleSwitch checked={isPriority} onChange={setIsPriority} /></div>

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { StudentInfo, StudyGroup, Year } from '../types';
+import { StudentInfo, StudyGroup, Year, Gender } from '../types';
 import { ToggleSwitch } from './ToggleSwitch';
 
 interface CreateStudyGroupModalProps {
@@ -24,6 +24,7 @@ export const CreateStudyGroupModal: React.FC<CreateStudyGroupModalProps> = ({ cu
     const [description, setDescription] = useState('');
     const [maxSize, setMaxSize] = useState(10);
     const [isPrivate, setIsPrivate] = useState(false);
+    const [genderRestriction, setGenderRestriction] = useState<'None' | Gender.Male | Gender.Female>('None');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
     
@@ -82,6 +83,7 @@ export const CreateStudyGroupModal: React.FC<CreateStudyGroupModalProps> = ({ cu
                 members: [currentUser.rollNumber],
                 isPrivate,
                 pendingMembers: isPrivate ? invitedMembers : [],
+                genderRestriction: genderRestriction === 'None' ? undefined : genderRestriction,
                 pinnedMessageIds: [],
                 roles: { [currentUser.rollNumber]: 'admin' },
                 tasks: [],
@@ -132,6 +134,14 @@ export const CreateStudyGroupModal: React.FC<CreateStudyGroupModalProps> = ({ cu
                             <p className="text-xs text-gray-400">Private groups are invite-only and hidden from search.</p>
                         </div>
                         <ToggleSwitch checked={isPrivate} onChange={setIsPrivate} />
+                    </div>
+                     <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">Group Gender Policy</label>
+                        <div className="flex gap-2 bg-gray-900/50 p-1 rounded-lg">
+                            <button type="button" onClick={() => setGenderRestriction('None')} className={`flex-1 py-2 font-semibold transition-colors rounded-md text-sm ${genderRestriction === 'None' ? 'text-white bg-blue-600 shadow' : 'text-gray-400 hover:text-white'}`}>Mixed Gender</button>
+                            <button type="button" onClick={() => setGenderRestriction(Gender.Male)} className={`flex-1 py-2 font-semibold transition-colors rounded-md text-sm ${genderRestriction === Gender.Male ? 'text-white bg-blue-600 shadow' : 'text-gray-400 hover:text-white'}`}>Boys Only</button>
+                            <button type="button" onClick={() => setGenderRestriction(Gender.Female)} className={`flex-1 py-2 font-semibold transition-colors rounded-md text-sm ${genderRestriction === Gender.Female ? 'text-white bg-blue-600 shadow' : 'text-gray-400 hover:text-white'}`}>Girls Only</button>
+                        </div>
                     </div>
 
                     {isPrivate && (

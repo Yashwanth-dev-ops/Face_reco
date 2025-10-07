@@ -31,11 +31,9 @@ export const MarkPredictionPanel: React.FC<MarkPredictionPanelProps> = ({ curren
     useEffect(() => {
         // When subject or midterm changes, update the input field with existing prediction if available
         if (currentData?.predictionData) {
-            // Fix: Use 'student_mid1_prediction' instead of 'mid1_prediction'.
+            // Fix: Use 'student_mid1_prediction' and 'student_mid2_prediction' to match the type definition.
             const prediction = selectedMidTerm === 'mid1'
-                // Fix: Use 'student_mid1_prediction' instead of 'mid1_prediction'.
                 ? currentData.predictionData.student_mid1_prediction
-                // Fix: Use 'student_mid2_prediction' instead of 'mid2_prediction'.
                 : currentData.predictionData.student_mid2_prediction;
             setPredictedMarks(prediction !== null && prediction !== undefined ? String(prediction) : '');
         } else {
@@ -81,7 +79,7 @@ export const MarkPredictionPanel: React.FC<MarkPredictionPanelProps> = ({ curren
         if (!currentData) return null;
 
         const actualMark = selectedMidTerm === 'mid1' ? currentData.marksData?.mid1 : currentData.marksData?.mid2;
-        // Fix: Use 'student_mid1_prediction' and 'student_mid2_prediction' instead of 'mid1_prediction' and 'mid2_prediction'.
+        // Fix: Use 'student_mid1_prediction' and 'student_mid2_prediction' to match the type definition.
         const prediction = selectedMidTerm === 'mid1' ? currentData.predictionData?.student_mid1_prediction : currentData.predictionData?.student_mid2_prediction;
         const rewardClaimed = selectedMidTerm === 'mid1' ? currentData.predictionData?.mid1_reward_claimed : currentData.predictionData?.mid2_reward_claimed;
 

@@ -1,3 +1,4 @@
+
 export enum Emotion {
     Happy = 'Happy',
     Sad = 'Sad',
@@ -48,6 +49,12 @@ export enum HeadPose {
     LookingDown = 'Looking Down',
 }
 
+export enum Gender {
+    Male = 'Male',
+    Female = 'Female',
+    Other = 'Other',
+}
+
 export type Theme = 'light' | 'dark';
 
 export interface UserPreferences {
@@ -61,7 +68,6 @@ export interface BoundingBox {
     height: number;
 }
 
-// Fix: Add MediaSettingsRange interface for camera focus capabilities.
 export interface MediaSettingsRange {
     max: number;
     min: number;
@@ -74,7 +80,6 @@ export interface MidTermMarks {
     mid2: number | null;
 }
 
-// Fix: Add MarkPrediction interface to define the shape of student mark predictions.
 export interface MarkPrediction {
     subject: string;
     // Student's own prediction
@@ -101,10 +106,10 @@ export interface StudentInfo {
     onboarded: boolean;
     photoBase64?: string;
     marks?: MidTermMarks[];
-    // Fix: Add optional predictions property to support the MarkPredictionPanel component.
     predictions?: MarkPrediction[];
     section: string;
     phoneNumber: string;
+    gender: Gender;
     studyGroupIds?: string[];
 }
 
@@ -119,6 +124,7 @@ export interface AdminInfo {
     isBlocked?: boolean;
     isPresentToday?: boolean;
     isVerified: boolean;
+    gender: Gender;
     photoBase64?: string;
     section?: string; // For incharges
     year?: Year; // For incharges
@@ -214,6 +220,7 @@ export interface ChatMessage {
     isPriority?: boolean;
     status?: 'sent' | 'delivered' | 'read'; // For status simulation
     file?: { name: string; url: string }; // For shared media
+    replyToMessageId?: string;
 }
 
 export interface Conversation {
@@ -265,7 +272,6 @@ export interface GroupTask {
     completedBy?: string; // Member ID
 }
 
-// FIX: Add GroupResource interface.
 export interface GroupResource {
     id: string;
     name: string;
@@ -293,9 +299,9 @@ export interface StudyGroup {
     pinnedMessageIds: string[];
     roles: { [memberId: string]: GroupMemberRole };
     tasks: GroupTask[];
-    // FIX: Add resources property to StudyGroup.
     resources: GroupResource[];
     pendingMembers?: string[];
+    genderRestriction?: Gender.Male | Gender.Female;
 }
 
 export interface NoteRating {

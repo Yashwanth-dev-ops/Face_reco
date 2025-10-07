@@ -6,6 +6,7 @@ interface NotificationBellProps {
     notifications: Notification[];
     onMarkAsRead: (notificationId: string) => void;
     onMarkAllAsRead: () => void;
+    onNotificationClick: (notification: Notification) => void;
 }
 
 const BellIcon: React.FC<{className?: string}> = ({className}) => (
@@ -14,7 +15,7 @@ const BellIcon: React.FC<{className?: string}> = ({className}) => (
     </svg>
 );
 
-export const NotificationBell: React.FC<NotificationBellProps> = ({ notifications, onMarkAsRead, onMarkAllAsRead }) => {
+export const NotificationBell: React.FC<NotificationBellProps> = ({ notifications, onMarkAsRead, onMarkAllAsRead, onNotificationClick }) => {
     const [isOpen, setIsOpen] = useState(false);
     const panelRef = useRef<HTMLDivElement>(null);
 
@@ -51,6 +52,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ notification
                     onMarkAsRead={onMarkAsRead}
                     onMarkAllAsRead={onMarkAllAsRead}
                     onClose={() => setIsOpen(false)}
+                    onNotificationClick={onNotificationClick}
                 />
             )}
         </div>

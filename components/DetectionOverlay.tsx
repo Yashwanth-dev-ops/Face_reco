@@ -1,5 +1,5 @@
+
 import React from 'react';
-// Fix: Import MediaSettingsRange for camera focus capabilities.
 import { DetectionResult, FaceResult, HandResult } from '../types';
 import { emotionUIConfig, handSignUIConfig } from './uiConfig';
 

@@ -1,8 +1,7 @@
 
 
-
 import React, { useState, useEffect, useMemo } from 'react';
-import { AdminInfo, Designation, Year } from '../types';
+import { AdminInfo, Designation, Year, Gender } from '../types';
 import { CameraCapture } from './CameraCapture';
 import { PasswordStrengthMeter } from './PasswordStrengthMeter';
 
@@ -36,6 +35,7 @@ export const AdminRegistrationScreen: React.FC<AdminRegistrationScreenProps> = (
         section: '1',
         password: '',
         confirmPassword: '',
+        gender: Gender.Male,
     });
     const [photoBase64, setPhotoBase64] = useState<string | null>(null);
     const [error, setError] = useState('');
@@ -81,6 +81,7 @@ export const AdminRegistrationScreen: React.FC<AdminRegistrationScreenProps> = (
                 phoneNumber: formData.phoneNumber,
                 department: formData.department.trim(),
                 designation: formData.designation,
+                gender: formData.gender,
                 section: formData.designation === Designation.Incharge ? formData.section : undefined,
                 year: formData.designation === Designation.Incharge ? formData.year : undefined,
                 password: formData.password,
@@ -117,6 +118,24 @@ export const AdminRegistrationScreen: React.FC<AdminRegistrationScreenProps> = (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <input type="email" placeholder="Email Address" value={formData.email} onChange={e => handleChange('email', e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white" required />
                                 <input type="tel" placeholder="Phone Number" value={formData.phoneNumber} onChange={e => handleChange('phoneNumber', e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-2">Gender</label>
+                                <div className="flex gap-4">
+                                    {Object.values(Gender).map(gender => (
+                                        <label key={gender} className="flex items-center gap-2 text-gray-300">
+                                            <input
+                                                type="radio"
+                                                name="gender"
+                                                value={gender}
+                                                checked={formData.gender === gender}
+                                                onChange={() => handleChange('gender', gender)}
+                                                className="form-radio bg-gray-700 border-gray-600 text-blue-500 focus:ring-blue-500"
+                                            />
+                                            {gender}
+                                        </label>
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     </fieldset>

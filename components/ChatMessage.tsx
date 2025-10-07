@@ -107,6 +107,7 @@ export const WaveformPlayer: React.FC<{ src: string, duration: number }> = ({ sr
 };
 
 
+// Fix: Export the Message component
 export const Message: React.FC<{
     msg: GroupChatMessage;
     allMessages: GroupChatMessage[];

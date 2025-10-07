@@ -33,6 +33,9 @@ interface TeacherDashboardProps {
     onMarkNotificationAsRead: (notificationId: string) => void;
     onMarkAllNotificationsAsRead: () => void;
     onQueryKnowledgeBase: (query: string) => Promise<{ answer: string; sources: KnowledgeDocument[] }>;
+    onNotificationClick: (notification: Notification) => void;
+    navigationTarget: { type: string; id: string; secondaryId?: string } | null;
+    onNavigationComplete: () => void;
 }
 
 const handleMouseMove = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -235,7 +238,7 @@ const TeacherReportPanel: React.FC<Pick<TeacherDashboardProps, 'currentUser' | '
 
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = (props) => {
-    const { currentUser, studentDirectory, attendance, faceLinks, timeTable, onLogout, onStartAnalyzer, onNavigateToSettings, onSetManualAttendance, leaveRecords, onRequestLeave, onCancelOwnLeave, onToggleAdminPresence, notifications, onMarkNotificationAsRead, onMarkAllNotificationsAsRead, onQueryKnowledgeBase } = props;
+    const { currentUser, studentDirectory, attendance, faceLinks, timeTable, onLogout, onStartAnalyzer, onNavigateToSettings, onSetManualAttendance, leaveRecords, onRequestLeave, onCancelOwnLeave, onToggleAdminPresence, notifications, onMarkNotificationAsRead, onMarkAllNotificationsAsRead, onNotificationClick, onQueryKnowledgeBase, navigationTarget, onNavigationComplete } = props;
     
     const [now, setNow] = useState(new Date());
     const [activeTab, setActiveTab] = useState<'schedule' | 'marks' | 'leave' | 'messages' | 'report' | 'knowledge'>('schedule');
@@ -245,6 +248,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = (props) => {
         const timer = setInterval(() => setNow(new Date()), 30000); // Update every 30 seconds
         return () => clearInterval(timer);
     }, []);
+
+    useEffect(() => {
+        if (navigationTarget?.type === 'CHAT') {
+            setActiveTab('messages');
+        }
+    }, [navigationTarget]);
 
     const { currentClass, upcomingClasses, completedClasses } = useMemo(() => {
         const dayOfWeek = now.getDay();
@@ -309,6 +318,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = (props) => {
                         notifications={notifications}
                         onMarkAsRead={onMarkNotificationAsRead}
                         onMarkAllAsRead={onMarkAllNotificationsAsRead}
+                        onNotificationClick={onNotificationClick}
                     />
                     <div className="flex items-center gap-2 mr-2">
                         <span className={`text-sm font-semibold ${currentUser.isPresentToday ?? true ? 'text-green-400' : 'text-red-400'}`}>
@@ -482,6 +492,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = (props) => {
                         adminDirectory={props.adminDirectory}
                         timeTable={timeTable}
                         onQueryKnowledgeBase={onQueryKnowledgeBase}
+                        navigationTarget={navigationTarget}
+                        onNavigationComplete={onNavigationComplete}
                     />
                 )}
             </main>

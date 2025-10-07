@@ -1,13 +1,11 @@
 
 
-
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { detectFacesAndHands } from './services/geminiService';
 import { exportAttendanceToCSV } from './services/csvExportService';
 import * as apiService from './services/apiService';
 import * as emailService from './services/emailService';
 import { MarkUpdate } from './services/apiService';
-// Fix: Import MediaSettingsRange for camera focus capabilities.
 import { DetectionResult, FaceResult, BoundingBox, StudentInfo, AdminInfo, AttendanceRecord, Emotion, Year, Designation, PasswordResetToken, SimulatedEmail, Theme, MediaSettingsRange, TimeTableEntry, LeaveRecord, Conversation, Holiday, StudyGroup, SharedNote, AttendanceAnomaly, GroupTask, Notification, Toast, GroupEvent, KnowledgeDocument, UserPreferences } from './types';
 import { CameraIcon } from './components/CameraIcon';
 import { DetectionOverlay } from './components/DetectionOverlay';
@@ -17,7 +15,6 @@ import { RegistrationModal } from './components/RegistrationModal';
 import { LoginScreen } from './components/LoginScreen';
 import { AdminDashboard } from './components/AdminDashboard';
 import { TeacherDashboard } from './components/TeacherDashboard';
-// Fix: Update import for StudentDashboard to use the barrel file, which resolves the module resolution error.
 import { StudentDashboard } from './StudentDashboard';
 import { VerificationScreen } from './components/VerificationScreen';
 import { ForgotPasswordScreen } from './components/ForgotPasswordScreen';
@@ -106,6 +103,7 @@ const App: React.FC = () => {
     const [analyzerContext, setAnalyzerContext] = useState<AnalyzerContext | null>(null);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [toasts, setToasts] = useState<Toast[]>([]);
+    const [navigationTarget, setNavigationTarget] = useState<{ type: string; id: string; secondaryId?: string } | null>(null);
 
     // Camera Focus State
     const [focusCapabilities, setFocusCapabilities] = useState<FocusCapabilities | null>(null);
@@ -461,7 +459,6 @@ const App: React.FC = () => {
             const track = mediaStream.getVideoTracks()[0];
             if ('getCapabilities' in track) {
                 const capabilities = track.getCapabilities();
-                // FIX: Cast focusMode and focusDistance to their expected types, as they are experimental and may not be fully typed.
                 if ('focusMode' in capabilities && 'focusDistance' in capabilities && capabilities.focusDistance) {
                     const focusMode = capabilities.focusMode as string[];
                     const focusDistance = capabilities.focusDistance as MediaSettingsRange;
@@ -471,7 +468,6 @@ const App: React.FC = () => {
                     });
                     setManualFocusValue((focusDistance.min + focusDistance.max) / 2);
                     if (focusMode?.includes('continuous')) {
-                        // FIX: Use 'as any' to apply the experimental focusMode constraint which is not in the standard MediaTrackConstraintSet type.
                         track.applyConstraints({ advanced: [{ focusMode: 'continuous' } as any] });
                     }
                 }
@@ -519,13 +515,19 @@ const App: React.FC = () => {
         setRegistrationTarget(null);
     };
     
-    const handleStudentSelfLinkFace = async (rollNumber: string) => {
-        try {
-            const newLinks = await apiService.linkNewFaceForStudent(rollNumber);
-            setFaceLinks(newLinks);
-        } catch (err) {
-            console.error("Failed to link face:", err);
+    const handleStudentSelfLinkFace = async (imageBase64: string): Promise<void> => {
+        if (currentUser?.userType !== 'STUDENT') {
+            const err = new Error("Only students can self-link their face.");
+            addToast({ title: "Error", message: err.message, type: 'error' });
             throw err;
+        }
+        try {
+            const newLinks = await apiService.verifyAndLinkNewFaceForStudent(currentUser.rollNumber, imageBase64);
+            setFaceLinks(newLinks);
+            addToast({ title: "Face ID Linked", message: "Your face has been successfully verified and linked to your profile.", type: 'success' });
+        } catch (err) {
+            addToast({ title: "Verification Failed", message: err instanceof Error ? err.message : "An unknown error occurred.", type: 'error' });
+            throw err; 
         }
     };
     
@@ -718,7 +720,7 @@ const App: React.FC = () => {
         setTimeTable(updatedTimeTable);
     };
 
-    const handleSendMessage = async (receiverId: string, content: string, file?: { name: string; url: string }, isPriority?: boolean) => {
+    const handleSendMessage = async (receiverId: string, content: string, file?: { name: string; url: string }, isPriority?: boolean, replyToMessageId?: string) => {
         if (!currentUser) throw new Error("No user is logged in.");
         const senderId = currentUser.userType === 'STUDENT' ? currentUser.rollNumber : currentUser.idNumber;
         const updatedConversations = await apiService.sendMessage(senderId, receiverId, content, file, isPriority);
@@ -739,6 +741,20 @@ const App: React.FC = () => {
                 !n.isRead ? { ...n, isRead: true } : n
             ));
         }
+    };
+    
+    const handleNotificationClick = (notification: Notification) => {
+        if (notification.linkTo) {
+            const [type, id, secondaryId] = notification.linkTo.split('/');
+            if (type === 'CHAT') {
+                setNavigationTarget({ type, id, secondaryId });
+            }
+        }
+        handleMarkNotificationAsRead(notification.id);
+    };
+
+    const handleNavigationComplete = () => {
+        setNavigationTarget(null);
     };
 
     const handleSendBroadcast = async (target: string, title: string, message: string) => {
@@ -767,8 +783,12 @@ const App: React.FC = () => {
         const { newGroup, updatedStudents } = await apiService.createStudyGroup(groupData);
         setStudyGroups(prev => [...prev, newGroup]);
         setStudentDirectory(updatedStudents);
+        // Fix: Use a safer method to update the current user state to avoid type corruption.
         if(currentUser?.userType === 'STUDENT'){
-            setCurrentUser(prev => ({...prev!, ...updatedStudents.get(currentUser.rollNumber)}));
+            const student = updatedStudents.get(currentUser.rollNumber);
+            if (student) {
+                setCurrentUser({ ...student, userType: 'STUDENT' });
+            }
         }
     };
     
@@ -777,7 +797,8 @@ const App: React.FC = () => {
         const { updatedGroup, updatedStudent } = await apiService.joinStudyGroup(groupId, currentUser.rollNumber);
         setStudyGroups(prev => prev.map(g => g.id === groupId ? updatedGroup : g));
         setStudentDirectory(prev => new Map(prev).set(updatedStudent.rollNumber, updatedStudent));
-        setCurrentUser(prev => ({...prev!, ...updatedStudent}));
+        // Fix: Use a safer method to update the current user state to avoid type corruption.
+        setCurrentUser({ ...updatedStudent, userType: 'STUDENT' });
     };
 
     const handleDeclineStudyGroupInvitation = async (groupId: string) => {
@@ -856,8 +877,11 @@ const App: React.FC = () => {
         const { updatedGroups, updatedStudents } = await apiService.deleteStudyGroupByStudent(groupId, currentUser.rollNumber);
         setStudyGroups(updatedGroups);
         setStudentDirectory(updatedStudents);
-        // Important: Update the current user's state to reflect removal from the group
-        setCurrentUser(prev => ({...prev!, ...updatedStudents.get(currentUser.rollNumber)}));
+        // Fix: Use a safer method to update the current user state to avoid type corruption.
+        const student = updatedStudents.get(currentUser.rollNumber);
+        if (student) {
+            setCurrentUser({ ...student, userType: 'STUDENT' });
+        }
     };
 
     const handleAddMemberToGroup = async (groupId: string, studentRollNumber: string) => {
@@ -879,7 +903,6 @@ const App: React.FC = () => {
         setStudyGroups(prev => prev.map(g => g.id === groupId ? updatedGroup : g));
     };
 
-    // Fix: Add handlers for prediction feature
     const handlePlacePrediction = async (subject: string, midTerm: 'mid1' | 'mid2', predictedMarks: number) => {
         if (currentUser?.userType !== 'STUDENT') return;
         const updatedStudent = await apiService.placePrediction(currentUser.rollNumber, subject, midTerm, predictedMarks);
@@ -908,6 +931,27 @@ const App: React.FC = () => {
     // --- RAG Handler ---
     const handleQueryKnowledgeBase = async (query: string): Promise<{ answer: string; sources: KnowledgeDocument[] }> => {
         return await apiService.queryKnowledgeBase(query);
+    };
+
+    const handleAutoFocusChange = (enabled: boolean) => {
+        setIsAutoFocus(enabled);
+        if (stream) {
+            const track = stream.getVideoTracks()[0];
+            const mode = enabled ? 'continuous' : 'manual';
+            if ('focusMode' in track.getCapabilities()) {
+                 track.applyConstraints({ advanced: [{ focusMode: mode } as any] });
+            }
+        }
+    };
+    
+    const handleManualFocusChange = (value: number) => {
+        setManualFocusValue(value);
+        if (stream && !isAutoFocus) {
+            const track = stream.getVideoTracks()[0];
+            if ('focusDistance' in track.getCapabilities()) {
+                track.applyConstraints({ advanced: [{ focusDistance: value } as any] });
+            }
+        }
     };
 
 
@@ -1049,156 +1093,274 @@ const App: React.FC = () => {
         switch(view) {
             case 'LOGIN': return <LoginScreen onLogin={handleLogin} onNavigateToRegister={(type) => setView(type === 'ADMIN' ? 'ADMIN_REGISTRATION' : 'STUDENT_REGISTRATION')} onForgotPassword={() => setView('FORGOT_PASSWORD')} onBlockedLogin={handleBlockedLogin} />;
             case 'STUDENT_REGISTRATION': return <StudentRegistrationScreen departments={departments} onRegisterStudent={handleStudentRegister} onBackToLogin={() => setView('LOGIN')} />;
-            case 'ADMIN_REGISTRATION': return <AdminRegistrationScreen departments={departments} onRegisterAdmin={handleAdminRegister} onBackToLogin={() => setView('LOGIN')} />;
-            case 'ADMIN_DASHBOARD': return currentUser?.userType === 'ADMIN' ? <AdminDashboard currentUser={currentUser} studentDirectory={studentDirectory} adminDirectory={adminDirectory} departments={departments} attendance={attendance} faceLinks={faceLinks} timeTable={timeTable} leaveRecords={leaveRecords} conversations={conversations} studyGroups={studyGroups} onDeleteStudyGroup={handleDeleteStudyGroup} onSendMessage={handleSendMessage} onApproveLeave={handleApproveLeave} onRejectLeave={handleRejectLeave} onUpdateTimeTable={handleUpdateTimeTable} onDeleteStudent={handleDeleteStudent} onBlockStudent={handleBlockStudent} onUnblockStudent={handleUnblockStudent} onDeleteAdmin={handleDeleteAdmin} onToggleBlockAdmin={handleToggleBlockAdmin} onToggleAdminPresence={handleToggleAdminPresence} onLogout={handleLogout} onDownload={handleDownload} onUpdateMarks={handleUpdateMarks} onLogAction={handleLogGenericAction} onNavigateToAnalyzer={() => setView('ANALYZER')} onChangePassword={handleChangePassword} onNavigateToSettings={() => setView('SETTINGS')} onBulkRegister={handleBulkRegister} onUpdateTimetableEntry={handleUpdateTimetableEntry} onNavigateToHolidayManagement={() => setView('HOLIDAY_MANAGEMENT')} onRequestLeave={handleRequestLeave} onCancelOwnLeave={handleCancelOwnLeave} onDeleteStudents={handleDeleteStudents} onBlockStudents={handleBlockStudents} onUnblockStudents={handleUnblockStudents} onDeleteAdmins={handleDeleteAdmins} onToggleAdminsBlock={handleToggleAdminsBlock} onGetAnomalies={handleGetAttendanceAnomalies} notifications={notifications} onMarkNotificationAsRead={handleMarkNotificationAsRead} onMarkAllNotificationsAsRead={handleMarkAllNotificationsAsRead} onSendBroadcast={handleSendBroadcast} onQueryKnowledgeBase={handleQueryKnowledgeBase} /> : null;
-            case 'TEACHER_DASHBOARD': return currentUser?.userType === 'ADMIN' ? <TeacherDashboard currentUser={currentUser} studentDirectory={studentDirectory} adminDirectory={adminDirectory} attendance={attendance} faceLinks={faceLinks} timeTable={timeTable} leaveRecords={leaveRecords} conversations={conversations} onSendMessage={handleSendMessage} onLogout={handleLogout} onStartAnalyzer={handleStartAnalyzerWithContext} onNavigateToSettings={() => setView('SETTINGS')} onSetManualAttendance={handleSetManualAttendance} onUpdateMarks={handleUpdateMarks} onLogAction={handleLogGenericAction} departments={departments} onRequestLeave={handleRequestLeave} onCancelOwnLeave={handleCancelOwnLeave} onToggleAdminPresence={handleToggleAdminPresence} notifications={notifications} onMarkNotificationAsRead={handleMarkNotificationAsRead} onMarkAllNotificationsAsRead={handleMarkAllNotificationsAsRead} onQueryKnowledgeBase={handleQueryKnowledgeBase} /> : null;
-            case 'STUDENT_DASHBOARD': {
-                if (currentUser?.userType === 'STUDENT') {
-                    const studentUser = currentUser;
-                    return <StudentDashboard 
-                        currentUser={studentUser} 
-                        attendance={attendance} 
-                        faceLinks={faceLinks} 
-                        studentDirectory={studentDirectory} 
-                        adminDirectory={adminDirectory} 
-                        timeTable={timeTable} 
-                        conversations={conversations} 
-                        holidays={holidays}
-                        studyGroups={studyGroups}
-                        sharedNotes={sharedNotes}
-                        notifications={notifications}
-                        onSendMessage={handleSendMessage} 
-                        onLogout={handleLogout} 
-                        onLogAttendance={handleLogAttendance} 
-                        onLinkFace={() => handleStudentSelfLinkFace(studentUser.rollNumber)} 
-                        onChangePassword={handleChangePassword} 
-                        onNavigateToSettings={() => setView('SETTINGS')}
-                        onMarkNotificationAsRead={handleMarkNotificationAsRead}
-                        onMarkAllNotificationsAsRead={handleMarkAllNotificationsAsRead} 
-                        onCreateStudyGroup={handleCreateStudyGroup}
-                        onJoinStudyGroup={handleJoinStudyGroup}
-                        onDeclineStudyGroupInvitation={handleDeclineStudyGroupInvitation}
-                        onSendGroupMessage={handleSendGroupMessage}
-                        onDeleteGroupMessage={handleDeleteGroupMessage}
-                        onDeleteGroupResource={handleDeleteGroupResource}
-                        onUploadNote={handleUploadNote}
-                        onRateNote={handleRateNote}
-                        onSuggestStudyTime={handleSuggestStudyTime}
-                        onSummarizeNote={handleSummarizeNote}
-                        onPinMessage={handlePinMessage}
-                        onAddTask={handleAddTask}
-                        onToggleTask={handleToggleTask}
-                        onDeleteStudyGroup={handleDeleteStudyGroupByStudent}
-                        onPlacePrediction={handlePlacePrediction}
-                        onClaimReward={handleClaimReward}
-                        onAddMemberToGroup={handleAddMemberToGroup}
-                        onScheduleEvent={handleScheduleGroupEvent}
-                        onDeleteEvent={handleDeleteGroupEvent}
-                        onQueryKnowledgeBase={handleQueryKnowledgeBase}
-                    />;
-                }
-                return null;
-            }
-            case 'VERIFY_ACCOUNT': return userToVerify ? <VerificationScreen userToVerify={userToVerify} onVerified={() => {setUserToVerify(null); setView('LOGIN');}} onBackToLogin={() => setView('LOGIN')} /> : null;
-            case 'FORGOT_PASSWORD': return <ForgotPasswordScreen onRequestReset={handleRequestPasswordReset} onBackToLogin={() => setView('LOGIN')} />;
-            case 'RESET_PASSWORD': return <ResetPasswordScreen onResetPassword={handleResetPassword} onBackToLogin={() => setView('LOGIN')} />;
-            case 'SETTINGS': return currentUser ? <SettingsScreen onBackToDashboard={() => setView(currentUser.userType === 'STUDENT' ? 'STUDENT_DASHBOARD' : (currentUser.designation === Designation.Teacher || currentUser.designation === Designation.Incharge ? 'TEACHER_DASHBOARD' : 'ADMIN_DASHBOARD'))} onChangePassword={handleChangePassword} onDeleteSelf={handleDeleteSelf} theme={preferences.theme} setTheme={setTheme} /> : null;
-            case 'ONBOARDING': return currentUser?.userType === 'STUDENT' ? <OnboardingScreen currentUser={currentUser} onComplete={handleCompleteStudentOnboarding} /> : null;
-            case 'BLOCKED': return blockedInfo ? <BlockedScreen blockedInfo={blockedInfo} onBackToLogin={() => {setBlockedInfo(null); setView('LOGIN');}} /> : null;
-            case 'HOLIDAY_MANAGEMENT': return currentUser?.userType === 'ADMIN' ? <HolidayManagementScreen holidays={holidays} onGrantHoliday={handleGrantHoliday} onCancelHoliday={handleCancelHoliday} onBackToDashboard={() => setView('ADMIN_DASHBOARD')} /> : null;
-            default: return <div>Unknown view</div>;
+            case 'ADMIN_REGISTRATION':
+                return <AdminRegistrationScreen departments={departments} onRegisterAdmin={handleAdminRegister} onBackToLogin={() => setView('LOGIN')} />;
+            case 'ADMIN_DASHBOARD':
+                if (currentUser?.userType !== 'ADMIN') return <LoginScreen onLogin={handleLogin} onNavigateToRegister={(type) => setView(type === 'ADMIN' ? 'ADMIN_REGISTRATION' : 'STUDENT_REGISTRATION')} onForgotPassword={() => setView('FORGOT_PASSWORD')} onBlockedLogin={handleBlockedLogin} />;
+                return <AdminDashboard 
+                    currentUser={currentUser}
+                    studentDirectory={studentDirectory}
+                    adminDirectory={adminDirectory}
+                    departments={departments}
+                    attendance={attendance}
+                    faceLinks={faceLinks}
+                    timeTable={timeTable}
+                    leaveRecords={leaveRecords}
+                    conversations={conversations}
+                    studyGroups={studyGroups}
+                    notifications={notifications}
+                    onSendMessage={handleSendMessage}
+                    onApproveLeave={handleApproveLeave}
+                    onRejectLeave={handleRejectLeave}
+                    onUpdateTimeTable={handleUpdateTimeTable}
+                    onDeleteStudent={handleDeleteStudent}
+                    onBlockStudent={handleBlockStudent}
+                    onUnblockStudent={handleUnblockStudent}
+                    onDeleteAdmin={handleDeleteAdmin}
+                    onToggleBlockAdmin={handleToggleBlockAdmin}
+                    onToggleAdminPresence={handleToggleAdminPresence}
+                    onLogout={handleLogout}
+                    onDownload={handleDownload}
+                    onUpdateMarks={handleUpdateMarks}
+                    onLogAction={handleLogGenericAction}
+                    onNavigateToAnalyzer={() => setView('ANALYZER')}
+                    onChangePassword={handleChangePassword}
+                    onNavigateToSettings={() => setView('SETTINGS')}
+                    onBulkRegister={handleBulkRegister}
+                    onUpdateTimetableEntry={handleUpdateTimetableEntry}
+                    onNavigateToHolidayManagement={() => setView('HOLIDAY_MANAGEMENT')}
+                    onRequestLeave={handleRequestLeave}
+                    onCancelOwnLeave={handleCancelOwnLeave}
+                    onDeleteStudents={handleDeleteStudents}
+                    onBlockStudents={handleBlockStudents}
+                    onUnblockStudents={handleUnblockStudents}
+                    onDeleteAdmins={handleDeleteAdmins}
+                    onToggleAdminsBlock={handleToggleAdminsBlock}
+                    onGetAnomalies={handleGetAttendanceAnomalies}
+                    onDeleteStudyGroup={handleDeleteStudyGroup}
+                    onMarkNotificationAsRead={handleMarkNotificationAsRead}
+                    onMarkAllNotificationsAsRead={handleMarkAllNotificationsAsRead}
+                    onSendBroadcast={handleSendBroadcast}
+                    onQueryKnowledgeBase={handleQueryKnowledgeBase}
+                    onNotificationClick={handleNotificationClick}
+                    navigationTarget={navigationTarget}
+                    onNavigationComplete={handleNavigationComplete}
+                />;
+            case 'TEACHER_DASHBOARD':
+                if (currentUser?.userType !== 'ADMIN') return <LoginScreen onLogin={handleLogin} onNavigateToRegister={(type) => setView(type === 'ADMIN' ? 'ADMIN_REGISTRATION' : 'STUDENT_REGISTRATION')} onForgotPassword={() => setView('FORGOT_PASSWORD')} onBlockedLogin={handleBlockedLogin} />;
+                return <TeacherDashboard
+                    currentUser={currentUser}
+                    studentDirectory={studentDirectory}
+                    adminDirectory={adminDirectory}
+                    attendance={attendance}
+                    faceLinks={faceLinks}
+                    timeTable={timeTable}
+                    leaveRecords={leaveRecords}
+                    departments={departments}
+                    conversations={conversations}
+                    notifications={notifications}
+                    onSendMessage={handleSendMessage}
+                    onLogout={handleLogout}
+                    onStartAnalyzer={handleStartAnalyzerWithContext}
+                    onNavigateToSettings={() => setView('SETTINGS')}
+                    onSetManualAttendance={handleSetManualAttendance}
+                    onUpdateMarks={handleUpdateMarks}
+                    onLogAction={handleLogGenericAction}
+                    onRequestLeave={handleRequestLeave}
+                    onCancelOwnLeave={handleCancelOwnLeave}
+                    onToggleAdminPresence={handleToggleAdminPresence}
+                    onMarkNotificationAsRead={handleMarkNotificationAsRead}
+                    onMarkAllNotificationsAsRead={handleMarkAllNotificationsAsRead}
+                    onQueryKnowledgeBase={handleQueryKnowledgeBase}
+                    onNotificationClick={handleNotificationClick}
+                    navigationTarget={navigationTarget}
+                    onNavigationComplete={handleNavigationComplete}
+                />;
+            case 'STUDENT_DASHBOARD':
+                 if (currentUser?.userType !== 'STUDENT') return <LoginScreen onLogin={handleLogin} onNavigateToRegister={(type) => setView(type === 'ADMIN' ? 'ADMIN_REGISTRATION' : 'STUDENT_REGISTRATION')} onForgotPassword={() => setView('FORGOT_PASSWORD')} onBlockedLogin={handleBlockedLogin} />;
+                 return <StudentDashboard
+                    // FIX: Explicitly cast currentUser to StudentInfo to resolve TypeScript error. The `if` check above ensures this is safe.
+                    currentUser={currentUser as StudentInfo}
+                    attendance={attendance}
+                    faceLinks={faceLinks}
+                    studentDirectory={studentDirectory}
+                    adminDirectory={adminDirectory}
+                    timeTable={timeTable}
+                    conversations={conversations}
+                    holidays={holidays}
+                    studyGroups={studyGroups}
+                    sharedNotes={sharedNotes}
+                    notifications={notifications}
+                    onSendMessage={handleSendMessage}
+                    onLogout={handleLogout}
+                    onLogAttendance={handleLogAttendance}
+                    onSelfLinkFace={handleStudentSelfLinkFace}
+                    onChangePassword={handleChangePassword}
+                    onNavigateToSettings={() => setView('SETTINGS')}
+                    onCreateStudyGroup={handleCreateStudyGroup}
+                    onJoinStudyGroup={handleJoinStudyGroup}
+                    onDeclineStudyGroupInvitation={handleDeclineStudyGroupInvitation}
+                    onSendGroupMessage={handleSendGroupMessage}
+                    onDeleteGroupMessage={handleDeleteGroupMessage}
+                    onDeleteGroupResource={handleDeleteGroupResource}
+                    onUploadNote={handleUploadNote}
+                    onRateNote={handleRateNote}
+                    onSuggestStudyTime={handleSuggestStudyTime}
+                    onSummarizeNote={handleSummarizeNote}
+                    onPinMessage={handlePinMessage}
+                    onAddTask={handleAddTask}
+                    onToggleTask={handleToggleTask}
+                    onDeleteStudyGroup={handleDeleteStudyGroupByStudent}
+                    onAddMemberToGroup={handleAddMemberToGroup}
+                    onPlacePrediction={handlePlacePrediction}
+                    onClaimReward={handleClaimReward}
+                    onMarkNotificationAsRead={handleMarkNotificationAsRead}
+                    onMarkAllNotificationsAsRead={handleMarkAllNotificationsAsRead}
+                    onScheduleEvent={handleScheduleGroupEvent}
+                    onDeleteEvent={handleDeleteGroupEvent}
+                    onQueryKnowledgeBase={handleQueryKnowledgeBase}
+                    onNotificationClick={handleNotificationClick}
+                    navigationTarget={navigationTarget}
+                    onNavigationComplete={handleNavigationComplete}
+                 />;
+            case 'ANALYZER':
+                const unlinkedStudents = Array.from(studentDirectory.values()).filter(s => {
+                    return !Array.from(faceLinks.values()).includes(s.rollNumber);
+                });
+
+                return (
+                    <div className="flex flex-col md:flex-row items-center justify-center gap-4 w-full h-screen p-4">
+                        {stream ? (
+                            <div className="flex flex-col items-center gap-4 w-full md:w-auto">
+                                <div className="relative w-full max-w-4xl mx-auto rounded-2xl overflow-hidden border-2 border-slate-700 shadow-lg">
+                                    <video
+                                        ref={videoRef}
+                                        autoPlay
+                                        muted
+                                        playsInline
+                                        onLoadedMetadata={() => {
+                                            if (videoRef.current) {
+                                                setVideoDimensions({ width: videoRef.current.videoWidth, height: videoRef.current.videoHeight });
+                                            }
+                                        }}
+                                        className="w-full h-auto"
+                                    />
+                                    <canvas ref={canvasRef} className="hidden" />
+                                    <DetectionOverlay
+                                        result={detectionResult}
+                                        videoWidth={videoDimensions.width}
+                                        videoHeight={videoDimensions.height}
+                                        onRegister={handleRegisterStudentFace}
+                                        focusPoint={focusPoint}
+                                    />
+                                    {isPausedForRateLimit && (
+                                        <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-center">
+                                            <p className="text-lg text-yellow-300">Rate limit reached. Paused analysis for 60 seconds.</p>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="flex flex-wrap items-center justify-center gap-4">
+                                     <button onMouseMove={handleMouseMove} onClick={handleStopCamera} className="btn-animated px-6 py-2 rounded-md font-semibold text-white bg-rose-600 transition-colors shadow-lg">
+                                        <span className="btn-content">
+                                            <span className="btn-dot"></span>
+                                            <span>Stop Camera</span>
+                                        </span>
+                                    </button>
+                                     {focusCapabilities && (
+                                        <FocusControls 
+                                            capabilities={focusCapabilities}
+                                            isAutoFocus={isAutoFocus}
+                                            onAutoFocusChange={handleAutoFocusChange}
+                                            manualFocusValue={manualFocusValue}
+                                            onManualFocusChange={handleManualFocusChange}
+                                        />
+                                    )}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center gap-4">
+                                <WelcomeScreen />
+                                <button onMouseMove={handleMouseMove} onClick={handleStartCamera} className="btn-animated px-6 py-2 rounded-md font-semibold text-white bg-blue-600 transition-colors shadow-lg z-10 relative">
+                                    <span className="btn-content">
+                                        <span className="btn-dot"></span>
+                                        <CameraIcon className="w-5 h-5" />
+                                        <span>Start Camera</span>
+                                    </span>
+                                </button>
+                            </div>
+                        )}
+                        <DetectionSummary result={detectionResult} studentCount={studentDirectory.size} />
+                        {registrationTarget && (
+                            <RegistrationModal
+                                face={registrationTarget}
+                                unlinkedStudents={unlinkedStudents}
+                                onClose={() => setRegistrationTarget(null)}
+                                onLink={handleLinkFaceToStudent}
+                            />
+                        )}
+                         <AIChatbot studentDirectory={studentDirectory} adminDirectory={adminDirectory} />
+                    </div>
+                );
+            case 'VERIFY_ACCOUNT':
+                if (!userToVerify) return <LoginScreen onLogin={handleLogin} onNavigateToRegister={(type) => setView(type === 'ADMIN' ? 'ADMIN_REGISTRATION' : 'STUDENT_REGISTRATION')} onForgotPassword={() => setView('FORGOT_PASSWORD')} onBlockedLogin={handleBlockedLogin} />;
+                return <VerificationScreen userToVerify={userToVerify} onVerified={() => { setUserToVerify(null); setView('LOGIN'); }} onBackToLogin={() => setView('LOGIN')} />;
+            case 'FORGOT_PASSWORD':
+                return <ForgotPasswordScreen onRequestReset={handleRequestPasswordReset} onBackToLogin={() => setView('LOGIN')} />;
+            case 'RESET_PASSWORD':
+                return <ResetPasswordScreen onResetPassword={handleResetPassword} onBackToLogin={() => setView('LOGIN')} />;
+            case 'SETTINGS':
+                 return <SettingsScreen
+                    onBackToDashboard={() => {
+                        if(currentUser?.userType === 'ADMIN') {
+                           if (currentUser.designation === Designation.Teacher || currentUser.designation === Designation.Incharge) {
+                                setView('TEACHER_DASHBOARD');
+                            } else {
+                                setView('ADMIN_DASHBOARD');
+                            }
+                        } else if (currentUser?.userType === 'STUDENT') {
+                            setView('STUDENT_DASHBOARD');
+                        } else {
+                            setView('LOGIN');
+                        }
+                    }}
+                    onChangePassword={handleChangePassword}
+                    onDeleteSelf={handleDeleteSelf}
+                    theme={preferences.theme}
+                    setTheme={setTheme}
+                 />;
+            case 'ONBOARDING':
+                if (currentUser?.userType !== 'STUDENT') return <LoginScreen onLogin={handleLogin} onNavigateToRegister={(type) => setView(type === 'ADMIN' ? 'ADMIN_REGISTRATION' : 'STUDENT_REGISTRATION')} onForgotPassword={() => setView('FORGOT_PASSWORD')} onBlockedLogin={handleBlockedLogin} />;
+                return <OnboardingScreen currentUser={currentUser as StudentInfo} onComplete={handleCompleteStudentOnboarding} />;
+            case 'BLOCKED':
+                if (!blockedInfo) return <LoginScreen onLogin={handleLogin} onNavigateToRegister={(type) => setView(type === 'ADMIN' ? 'ADMIN_REGISTRATION' : 'STUDENT_REGISTRATION')} onForgotPassword={() => setView('FORGOT_PASSWORD')} onBlockedLogin={handleBlockedLogin} />;
+                return <BlockedScreen blockedInfo={blockedInfo} onBackToLogin={() => setView('LOGIN')} />;
+            case 'HOLIDAY_MANAGEMENT':
+                 return <HolidayManagementScreen 
+                    holidays={holidays}
+                    onGrantHoliday={handleGrantHoliday}
+                    onCancelHoliday={handleCancelHoliday}
+                    onBackToDashboard={() => setView('ADMIN_DASHBOARD')}
+                 />;
+            default:
+                return <div>Unknown view</div>;
         }
-    }
+    };
 
     return (
         <>
-        <ToastContainer toasts={toasts} onDismiss={removeToast} />
-        <div className="min-h-screen flex flex-col items-center justify-center p-4">
-            {view === 'ANALYZER' ? (
-                <div className="w-full max-w-7xl mx-auto flex flex-col h-full animate-fade-in">
-                    <header className="mb-4 w-full flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                        <div className="flex items-center gap-3">
-                            <img src="https://krucet.ac.in/wp-content/uploads/2020/09/cropped-kru-150-round-non-transparent-1.png" alt="Krishna University Logo" className="w-10 h-10 rounded-full" />
-                            <div>
-                                <h1 className="text-xl font-bold text-white">Live Attendance Analyzer</h1>
-                                {analyzerContext && <p className="text-sm text-blue-300">Subject: {analyzerContext.subject}</p>}
-                            </div>
-                        </div>
-                        <div className="flex gap-2 self-end sm:self-auto">
-                             <button
-                                onClick={() => {
-                                    handleStopCamera();
-                                    if(currentUser?.userType === 'ADMIN') {
-                                        if (currentUser.designation === Designation.Teacher || currentUser.designation === Designation.Incharge) {
-                                            setView('TEACHER_DASHBOARD');
-                                        } else {
-                                            setView('ADMIN_DASHBOARD');
-                                        }
-                                    } else {
-                                        setView('LOGIN');
-                                    }
-                                }}
-                                className="px-4 py-2 rounded-lg font-semibold text-gray-800 dark:text-white bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 transition-all"
-                            >
-                                Back to Dashboard
-                            </button>
-                             <button
-                                onClick={stream ? handleStopCamera : handleStartCamera}
-                                onMouseMove={handleMouseMove}
-                                className={`btn-animated px-6 py-2 rounded-lg font-semibold text-white shadow-lg ${stream ? 'bg-red-600' : 'bg-blue-600'}`}
-                            >
-                                <span className="btn-content">
-                                    <span className="btn-dot"></span>
-                                    <CameraIcon className="w-5 h-5" />
-                                    <span>{stream ? 'Stop Camera' : 'Stop Camera'}</span>
-                                </span>
-                            </button>
-                        </div>
-                    </header>
-                    <main className="w-full flex-grow flex flex-col md:flex-row gap-4 items-start">
-                        <div className="relative w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border-2 border-slate-800 flex items-center justify-center">
-                            <video 
-                                ref={videoRef} 
-                                autoPlay 
-                                muted 
-                                playsInline 
-                                onLoadedMetadata={() => {
-                                    if(videoRef.current) {
-                                        setVideoDimensions({width: videoRef.current.videoWidth, height: videoRef.current.videoHeight});
-                                    }
-                                }}
-                                className="w-full h-full object-cover transform -scale-x-100"
-                            />
-                            <canvas ref={canvasRef} className="hidden" />
-                            {!stream && <WelcomeScreen />}
-                            {stream && <DetectionOverlay result={detectionResult} videoWidth={videoDimensions.width} videoHeight={videoDimensions.height} onRegister={handleRegisterStudentFace} focusPoint={focusPoint} />}
-                             {error && isApiError && (
-                                <div className="absolute bottom-4 left-4 bg-red-800/80 text-white p-3 rounded-lg animate-fade-in text-sm">{error.title}: {error.message}</div>
-                            )}
-                             {isPausedForRateLimit && (
-                                <div className="absolute bottom-4 left-4 bg-yellow-600/80 text-black p-3 rounded-lg animate-fade-in text-sm font-semibold">Rate limit reached. Pausing analysis for 60s.</div>
-                            )}
-                            <div className="absolute top-0 left-0 w-full h-4 bg-red-500 scanner-line animate-scanner hidden"></div>
-                        </div>
-                         <DetectionSummary result={detectionResult} studentCount={faceLinks.size} />
-                    </main>
-                     {registrationTarget && (
-                         <RegistrationModal 
-                            face={registrationTarget}
-                            unlinkedStudents={Array.from<StudentInfo>(studentDirectory.values()).filter(s => !Array.from(faceLinks.values()).includes(s.rollNumber))}
-                            onClose={() => setRegistrationTarget(null)}
-                            onLink={handleLinkFaceToStudent}
-                        />
-                    )}
+            {error && !isApiError && (
+                <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-red-600 text-white p-4 rounded-lg shadow-lg max-w-md w-full">
+                    <h3 className="font-bold">{error.title}</h3>
+                    <p>{error.message}</p>
                 </div>
-            ) : (
-                renderContent()
             )}
-             { (view === 'LOGIN' || view === 'STUDENT_REGISTRATION' || view === 'ADMIN_REGISTRATION' || view === 'VERIFY_ACCOUNT' || view === 'FORGOT_PASSWORD' || view === 'RESET_PASSWORD' || view === 'ONBOARDING') && <MockInbox emails={simulatedEmails} />}
-             { currentUser?.userType === 'ADMIN' && <AIChatbot studentDirectory={studentDirectory} adminDirectory={adminDirectory} /> }
-        </div>
+             <main className="w-full min-h-screen bg-gray-900 text-white font-sans flex items-center justify-center">
+                {renderContent()}
+                <MockInbox emails={simulatedEmails} />
+                <ToastContainer toasts={toasts} onDismiss={removeToast} />
+            </main>
         </>
     );
-}
+};
 
 export default App;

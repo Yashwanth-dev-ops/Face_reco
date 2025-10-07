@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { StudentInfo, AdminInfo, AttendanceRecord, Emotion, MidTermMarks, TimeTableEntry, Conversation, Holiday, StudyGroup, SharedNote, GroupTask, MarkPrediction, Notification, GroupEvent, KnowledgeDocument } from '../types';
+import { StudentInfo, AdminInfo, AttendanceRecord, Emotion, MidTermMarks, TimeTableEntry, Conversation, Holiday, StudyGroup, SharedNote, GroupTask, MarkPrediction, Notification, GroupEvent, KnowledgeDocument, ChatMessage } from '../types';
 import { emotionUIConfig } from './uiConfig';
 import { detectSingleFaceEmotion } from '../services/geminiService';
 import { AttendanceStatusPanel } from './AttendanceStatusPanel';
@@ -17,6 +17,7 @@ import { CommunityPanel } from './CommunityPanel';
 import { MarkPredictionPanel } from './MarkPredictionPanel';
 import { NotificationBell } from './NotificationBell';
 import { RAGKnowledgeBasePanel } from './RAGKnowledgeBasePanel';
+import { NoticeBoardPanel } from './NoticeBoardPanel';
 
 interface StudentDashboardProps {
     currentUser: StudentInfo;
@@ -33,7 +34,7 @@ interface StudentDashboardProps {
     onSendMessage: (receiverId: string, content: string, file?: { name: string; url: string }, isPriority?: boolean) => Promise<void>;
     onLogout: () => void;
     onLogAttendance: (persistentId: number, emotion: Emotion, subject?: string) => void;
-    onLinkFace: () => Promise<void>;
+    onSelfLinkFace: (imageBase64: string) => Promise<void>;
     onChangePassword: (currentPassword: string, newPassword: string) => Promise<void>;
     onNavigateToSettings: () => void;
     onCreateStudyGroup: (groupData: Omit<StudyGroup, 'id' | 'events' | 'messages'>) => Promise<void>;
@@ -58,6 +59,9 @@ interface StudentDashboardProps {
     onScheduleEvent: (groupId: string, eventData: Omit<GroupEvent, 'id'>) => Promise<void>;
     onDeleteEvent: (groupId: string, eventId: string) => Promise<void>;
     onQueryKnowledgeBase: (query: string) => Promise<{ answer: string; sources: KnowledgeDocument[] }>;
+    onNotificationClick: (notification: Notification) => void;
+    navigationTarget: { type: string; id: string; secondaryId?: string } | null;
+    onNavigationComplete: () => void;
 }
 
 type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'BLOCKED' | 'UNLINKED';
@@ -76,15 +80,22 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = (props) => {
     const {
         currentUser, attendance, faceLinks, studentDirectory, adminDirectory,
         timeTable, conversations, holidays, studyGroups, sharedNotes, notifications,
-        onSendMessage, onLogout, onLogAttendance, onLinkFace, onNavigateToSettings,
-        onMarkNotificationAsRead, onMarkAllNotificationsAsRead,
-        onQueryKnowledgeBase
+        onSendMessage, onLogout, onLogAttendance, onSelfLinkFace, onNavigateToSettings,
+        onMarkNotificationAsRead, onMarkAllNotificationsAsRead, onNotificationClick,
+        onQueryKnowledgeBase, navigationTarget, onNavigationComplete
     } = props;
 
     const [activeTab, setActiveTab] = useState<Tab>('dashboard');
     const [isCaptureModalOpen, setIsCaptureModalOpen] = useState(false);
+    const [isFaceLinkModalOpen, setIsFaceLinkModalOpen] = useState(false);
     const [isAITutorModalOpen, setIsAITutorModalOpen] = useState(false);
     const [tutorSubject, setTutorSubject] = useState('');
+
+    useEffect(() => {
+        if (navigationTarget?.type === 'CHAT') {
+            setActiveTab('messages');
+        }
+    }, [navigationTarget]);
 
     const myPersistentId = useMemo(() => {
         return Array.from(faceLinks.entries()).find(([, roll]) => roll === currentUser.rollNumber)?.[0];
@@ -113,6 +124,24 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = (props) => {
 
     const studentAttendance = useMemo(() => attendance.filter(rec => rec.persistentId === myPersistentId), [attendance, myPersistentId]);
     
+    const priorityMessages = useMemo(() => {
+        const messages: (ChatMessage & { senderInfo: AdminInfo | null })[] = [];
+        
+        conversations.forEach(convo => {
+            const otherParticipantId = convo.participantIds.find(id => id !== currentUser.rollNumber);
+            if (otherParticipantId && adminDirectory.has(otherParticipantId)) {
+                const adminInfo = adminDirectory.get(otherParticipantId)!;
+                convo.messages.forEach(msg => {
+                    if (msg.isPriority) {
+                        messages.push({ ...msg, senderInfo: adminInfo });
+                    }
+                });
+            }
+        });
+    
+        return messages.sort((a, b) => b.timestamp - a.timestamp);
+    }, [conversations, adminDirectory, currentUser.rollNumber]);
+
     const handleMarkAttendance = async (base64Data: string) => {
         if (myPersistentId === undefined) {
             throw new Error("Face ID not linked to your account.");
@@ -134,7 +163,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = (props) => {
             case 'community':
                 return <CommunityPanel {...props} />;
             case 'messages':
-                return <CommunicationPanel currentUser={{ ...currentUser, userType: 'STUDENT' }} conversations={conversations} onSendMessage={onSendMessage} studentDirectory={studentDirectory} adminDirectory={adminDirectory} timeTable={timeTable} onQueryKnowledgeBase={onQueryKnowledgeBase} />;
+                return <CommunicationPanel currentUser={{ ...currentUser, userType: 'STUDENT' }} conversations={conversations} onSendMessage={onSendMessage} studentDirectory={studentDirectory} adminDirectory={adminDirectory} timeTable={timeTable} onQueryKnowledgeBase={onQueryKnowledgeBase} navigationTarget={navigationTarget} onNavigationComplete={onNavigationComplete} />;
             case 'advisor':
                 return (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -147,9 +176,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = (props) => {
             case 'dashboard':
             default:
                 return (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <AttendanceStatusPanel status={attendanceStatus} onMarkAttendanceClick={() => setIsCaptureModalOpen(true)} onLinkFaceClick={onLinkFace} lastLogTime={lastLogTime} blockedByAdminName={blockedByAdminName} blockExpiresAt={currentUser.blockExpiresAt} />
-                        <AttendanceCalendar studentAttendance={studentAttendance} />
+                    <div className="space-y-6">
+                        <NoticeBoardPanel priorityMessages={priorityMessages} />
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <AttendanceStatusPanel status={attendanceStatus} onMarkAttendanceClick={() => setIsCaptureModalOpen(true)} onLinkFaceClick={() => setIsFaceLinkModalOpen(true)} lastLogTime={lastLogTime} blockedByAdminName={blockedByAdminName} blockExpiresAt={currentUser.blockExpiresAt} />
+                            <AttendanceCalendar studentAttendance={studentAttendance} />
+                        </div>
                     </div>
                 );
         }
@@ -165,6 +197,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = (props) => {
                     actionText="Mark Present"
                 />
             )}
+            {isFaceLinkModalOpen && (
+                <AttendanceCaptureModal
+                    onClose={() => setIsFaceLinkModalOpen(false)}
+                    onCapture={onSelfLinkFace}
+                    title="Link Your Face ID"
+                    actionText="Verify & Link Face"
+                />
+            )}
             {isAITutorModalOpen && (
                 <AITutorModal subject={tutorSubject} onClose={() => setIsAITutorModalOpen(false)} />
             )}
@@ -177,7 +217,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = (props) => {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <NotificationBell notifications={notifications} onMarkAsRead={onMarkNotificationAsRead} onMarkAllAsRead={onMarkAllNotificationsAsRead} />
+                    <NotificationBell notifications={notifications} onMarkAsRead={onMarkNotificationAsRead} onMarkAllAsRead={onMarkAllNotificationsAsRead} onNotificationClick={onNotificationClick} />
                     <button onClick={onNavigateToSettings} className="px-4 py-2 rounded-lg font-semibold text-white bg-gray-700 hover:bg-gray-600 transition-all">Settings</button>
                     <button onClick={onLogout} className="px-4 py-2 rounded-lg font-semibold text-white bg-rose-600 hover:bg-rose-500 transition-all">Logout</button>
                 </div>
